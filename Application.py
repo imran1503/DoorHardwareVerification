@@ -20,7 +20,7 @@ def main():
    # checkDB(userInputList)
 
     # Create the connection object    IF ERROR ADD PASSWORD
-    myconn = mysql.connector.connect(host='localhost', database='DoorHardwareVV', user='root', password='')
+    myconn = mysql.connector.connect(host='localhost', database='DoorHardwareVV', user='root', password='Namikaze1503!')
 
     # printing the connection object
     # print(myconn)
@@ -34,8 +34,8 @@ def main():
     cursor.execute(
         """SELECT * FROM compatability where Door = "%s" AND Frame = "%s" AND Strike = "%s" and ADO = "%s" """ % (
         int (userInputList[0]), int (userInputList[1]), int (userInputList[2]), int (userInputList[3])))
-    #records = cursor.fetchall()
-    records = None
+    records = cursor.fetchall()
+
 
     if records == (None):
         print("No compatability.")
