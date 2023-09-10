@@ -20,7 +20,7 @@ def main():
    # checkDB(userInputList)
 
     # Create the connection object    IF ERROR ADD PASSWORD
-    myconn = mysql.connector.connect(host='localhost', database='DoorHardwareVV', user='root', password='Namikaze1503!')
+    myconn = mysql.connector.connect(host='localhost', database='DoorHardwareVV', user='root', password='')
 
     # printing the connection object
     # print(myconn)
