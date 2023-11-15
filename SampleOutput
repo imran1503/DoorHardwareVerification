@@ -1,0 +1,24 @@
+C:\Users\wolf2\AppData\Local\Microsoft\WindowsApps\python3.7.exe C:/Users/wolf2/PycharmProjects/DoorHardwareVV/Application.py
+Answer numbers for selecting an option.
+Door Material?      1.MDF  2.Wood
+>> 2
+Door is on the _____ of the frame?      1.Left hand leaf  2.Right hand leaf
+Strike?      1.Standard 12V  2.Mortise 24V
+>> 2
+ADO?     1.LH  2.LH  Rev  3.RH  4.RH Rev  5.Maglock  6.Electric Crashbar  7.Not Opening  8.None
+>> 2
+No compatability.
+Please Try Again. >>
+
+
+Answer numbers for selecting an option.
+Door Material?      1.MDF  2.Wood
+>> 1
+Door is on the _____ of the frame?      1.Left hand leaf  2.Right hand leaf
+Strike?      1.Standard 12V  2.Mortise 24V
+>> 1
+ADO?     1.LH  2.LH  Rev  3.RH  4.RH Rev  5.Maglock  6.Electric Crashbar  7.Not Opening  8.None
+>> 1
+Database says these components should work together.
+
+Process finished with exit code 0
