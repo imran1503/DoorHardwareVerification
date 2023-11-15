@@ -37,23 +37,27 @@ show tables in doorhardwarevv;
 -- insert into compatability values(2,1,2, 5);
 -- insert into frametype values (1, "Left hand leaf");
 -- insert into frametype values (2, "Right hand leaf");
-drop table compatability;
-create table Compatability(
-	id int primary key,
-    Door_Type varchar(225),                  -- Employee, Visitor, Emp/Vis
-    Door_Swing varchar(225),				 -- Right hand Leaf, Left hand Leaf
-	Door_Material varchar(255),              -- WOOD, MDF, Glass
-    Door_Selection varchar(255),             -- single, double, in swing, out swing, medium height turnstile, full height turnstile, optical turnsile, parking gate
-    Door_Location varchar(255),              -- ext, int
-    Fire_Rated_Door Varchar(255),            -- fire rated, required fire exit, required fire rated exit (BOTH)
- 	Frame_Material varchar(255),             -- wood, metal, none
-    Existing_Hardware varchar(255),          -- None, Standard Strike, Mortise Strike, Knob Set, Deadbolt, Magnetic Surface, Magnetic Shear, Electric Lockset, Mechanical exit bar, Maglock
-    Proposed_Hardware varchar(255),          -- None, Standard Strike, Mortise Strike, Knob set, Deadbolt, Magnetic Surface, Magnetic Shear, Electric Lockset, Mechanical Exit bar, Maglock,
-    Proposed_Voltage_Required varchar(255),  -- 12 AC, 12 DC, 24 AC, 24 DC
-    ADO varchar(255),                        -- LH, LH Rev, RH, RH Rev, None, Not Opening
-    Secure_Integration varchar(255),         -- cx33, none
-    Door_Contact varchar(255),               -- resessed, surface, built into lock, none
-    Request_To_Exit varchar(225),            -- wave to open, push button, touch sensitive bar, mechanical exit bar 
-);
-select * from doorhardwarevv;
+-- drop table compatability;
+-- create table Compatability(
+-- 	id int primary key,
+--     Door_Type varchar(225),                  -- Employee, Visitor, Emp/Vis
+--     Door_Swing varchar(225),				 -- Right hand Leaf, Left hand Leaf
+-- 	Door_Material varchar(255),              -- WOOD, MDF, Glass
+--     Door_Selection varchar(255),             -- single, double, in swing, out swing, medium height turnstile, full height turnstile, optical turnsile, parking gate
+--     Door_Location varchar(255),              -- ext, int
+--     Fire_Rated_Door Varchar(255),            -- fire rated, required fire exit, required fire rated exit (BOTH)
+--  	Frame_Material varchar(255),             -- wood, metal, none
+--     Existing_Hardware varchar(255),          -- None, Standard Strike, Mortise Strike, Knob Set, Deadbolt, Magnetic Surface, Magnetic Shear, Electric Lockset, Mechanical exit bar, Maglock
+--     Proposed_Hardware varchar(255),          -- None, Standard Strike, Mortise Strike, Knob set, Deadbolt, Magnetic Surface, Magnetic Shear, Electric Lockset, Mechanical Exit bar, Maglock,
+--     Proposed_Voltage_Required varchar(255),  -- 12 AC, 12 DC, 24 AC, 24 DC
+--     ADO varchar(255),                        -- LH, LH Rev, RH, RH Rev, None, Not Opening
+--     Secure_Integration varchar(255),         -- cx33, none
+--     Door_Contact varchar(255),               -- resessed, surface, built into lock, none
+--     Request_To_Exit varchar(225),            -- wave to open, push button, touch sensitive bar, mechanical exit bar 
+-- );
+
+ select * from compatability;
+
+-- select count(*) from compatability where Door = 1 AND Frame = 1 AND Strike = 1 and ADO = 0 ;
+
 
