@@ -3,7 +3,7 @@ This is a python application with connections to a MySQL database that will allo
 
 This is managed by having a compatability table and identification tables that are stored on a local MySQL database.
 
-##Future Goals:
+## Future Goals:
 - Database stored on a amazon database server.
 - Move from a python script to a web site.
 - Implement user account system. 
