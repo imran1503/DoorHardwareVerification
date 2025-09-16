@@ -1,6 +1,6 @@
-import mysql
-import mysql
-from mysql.connector import connection
+import os
+import mysql.connector
+from dotenv import load_dotenv
 
 def restart():
     print("input is not a number.")
@@ -20,6 +20,11 @@ def check_user_input(userInput):
 
 
 def main():
+    load_dotenv()
+    DB_HOST = os.getenv("DB_HOST")
+    DB_NAME = os.getenv("DB_NAME")
+    DB_USER = os.getenv("DB_USER")
+    DB_PASSWORD = os.getenv("DB_PASSWORD")
     userInputList = []
     print("Answer numbers for selecting an option. ")
 
@@ -40,7 +45,7 @@ def main():
     userInputList.append(int(ADOInput))
 
     # Create the connection object    IF ERROR ADD PASSWORD
-    myconn = mysql.connector.connect(host='localhost', database='DoorHardwareVV', user='root', password='')
+    myconn = mysql.connector.connect(host=DB_HOST, database=DB_NAME, user=DB_USER, password= DB_PASSWORD)
     cursor = myconn.cursor()
     cursor.execute(
         """SELECT count(*) FROM compatability where Door = "%s" AND Frame = "%s" AND Strike = "%s" and ADO = "%s"; """
