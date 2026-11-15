@@ -60,19 +60,21 @@ const emptyOpening = {
   door_material: "",
   frame_material: "",
   configuration: "",
-  swing: "",
+  handing: "",
+  swing_direction: "",
   location: "",
   fire_rated: "",
   width_in: "",
   height_in: "",
   weight_lb: "",
+  reveal_depth_mm: "",
 };
 const hardwareGroups = [
   { label: "Door & frame", categories: ["door", "frame"] },
   { label: "Hinges & closers", categories: ["hinge", "closer"] },
   { label: "Locks & exit hardware", categories: ["mechanical_lock", "electric_lock", "electric_strike", "exit_device", "flush_bolt"] },
   { label: "Operators & activation", categories: ["automatic_operator", "activation_device", "safety_sensor"] },
-  { label: "Controls, power & washroom", categories: ["controller", "access_control", "power_supply", "request_to_exit", "emergency_release", "alarm", "washroom_control"] },
+  { label: "Controls, power & washroom", categories: ["controller", "access_control", "power_supply", "request_to_exit", "emergency_release", "emergency_call", "door_contact", "alarm", "washroom_control"] },
   { label: "Other door hardware", categories: ["door_seal", "threshold", "coordinator", "door_stop", "other"] },
 ];
 
@@ -155,10 +157,12 @@ export default function ModelApp() {
   const [showAssertion, setShowAssertion] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [opening, setOpening] = useState(emptyOpening);
+  const [openingPreview, setOpeningPreview] = useState(null);
   const [checkResult, setCheckResult] = useState(null);
   const [checking, setChecking] = useState(false);
   const [importing, setImporting] = useState(false);
   const importInput = useRef(null);
+  const evidenceImportInput = useRef(null);
 
   const isNight = localTime.getHours() >= 18 || localTime.getHours() < 6;
   const activeTheme = themeMode === "auto" ? (isNight ? "dark" : "light") : themeMode;
@@ -223,6 +227,39 @@ export default function ModelApp() {
   const selectedProducts = selectedIds
     .map((id) => activeProducts.find((product) => product.id === Number(id)))
     .filter(Boolean);
+  const openingContext = useMemo(
+    () => Object.fromEntries(
+      Object.entries(opening)
+        .filter(([, value]) => value !== "")
+        .map(([key, value]) => [key, ["width_in", "height_in", "weight_lb", "reveal_depth_mm"].includes(key) ? Number(value) : value]),
+    ),
+    [opening],
+  );
+  const hasOpeningDetails = Object.keys(openingContext).length > 0;
+
+  useEffect(() => {
+    if (!hasOpeningDetails) {
+      setOpeningPreview(null);
+      return undefined;
+    }
+    let current = true;
+    const timer = window.setTimeout(async () => {
+      setOpeningPreview({ status: "unverified", message: "Checking opening details…", findings: [] });
+      try {
+        const result = await api("/api/opening-fit", {
+          method: "POST",
+          body: JSON.stringify({ product_ids: selectedIds, opening: openingContext }),
+        });
+        if (current) setOpeningPreview(result);
+      } catch (error) {
+        if (current) setOpeningPreview({ status: "unverified", message: error.message, findings: [] });
+      }
+    }, 250);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [hasOpeningDetails, openingContext, selectedIds]);
 
   const markSaving = () => setDatabaseState("saving");
   const markSaved = async () => {
@@ -291,6 +328,42 @@ export default function ModelApp() {
     link.click();
     URL.revokeObjectURL(url);
   };
+  const importEvidenceBundle = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    markSaving();
+    try {
+      const bundle = JSON.parse(await file.text());
+      const result = await api("/api/evidence/import", { method: "POST", body: JSON.stringify(bundle) });
+      await markSaved();
+      const created = Object.values(result.created || {}).reduce((sum, count) => sum + count, 0);
+      const updated = Object.values(result.updated || {}).reduce((sum, count) => sum + count, 0);
+      const errors = result.errors || [];
+      const detail = errors.length ? ` ${errors.length} row${errors.length === 1 ? "" : "s"} need attention; first: ${errors[0].section} row ${errors[0].row}: ${errors[0].error}` : "";
+      setNotice(`Evidence import: ${created} added, ${updated} updated.${detail}`);
+      if (errors.length) console.warn("Evidence import row errors", errors);
+    } catch (error) {
+      setDatabaseState("connected");
+      setNotice(`Import failed: ${error.message}`);
+    } finally {
+      setImporting(false);
+      event.target.value = "";
+    }
+  };
+  const downloadEvidenceTemplate = () => {
+    const template = {
+      compatibilityRules: [],
+      assertions: [],
+      researchNotes: [],
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(template, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "door-hardware-evidence-template.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const saveAssertion = async (event) => {
     event.preventDefault();
@@ -352,11 +425,6 @@ export default function ModelApp() {
   const runCheck = async () => {
     setChecking(true);
     try {
-      const openingContext = Object.fromEntries(
-        Object.entries(opening)
-          .filter(([, value]) => value !== "")
-          .map(([key, value]) => [key, ["width_in", "height_in", "weight_lb"].includes(key) ? Number(value) : value]),
-      );
       setCheckResult(await api("/api/compatibility/check", { method: "POST", body: JSON.stringify({ product_ids: selectedIds, opening: openingContext }) }));
     } catch (error) {
       setNotice(error.message);
@@ -425,16 +493,16 @@ export default function ModelApp() {
             <div className="model-check-grid">
               <div className="form-panel assembly-panel">
                 <div className="section-heading"><div className="section-icon"><ClipboardCheck size={18} /></div><div><h2>Products in this opening</h2><p>Add the components you want to check together.</p></div><span className="step-chip">{selectedIds.length} SELECTED</span></div>
-                <OpeningDetails opening={opening} setOpening={setOpening} />
+                <OpeningDetails opening={opening} setOpening={setOpening} preview={openingPreview} />
                 <HardwarePicker groups={hardwareGroups} categories={categories} products={activeProducts} selectedIds={selectedIds} onSelect={(id) => { setSelectedIds((ids) => ids.includes(id) ? ids : [...ids, id]); setCheckResult(null); }} onAddProduct={() => setPage("products")} />
                 <div className="assembly-products">
                   {selectedProducts.map((product) => <div className="assembly-product" key={product.id}><div><b>{displayName(product)}</b><span>{categories[product.category] || product.category} · <StatusPill status={product.evidence_status} /></span></div><button className="icon-button" aria-label={`Remove ${displayName(product)}`} onClick={() => { setSelectedIds((ids) => ids.filter((id) => Number(id) !== product.id)); setCheckResult(null); }}><X size={16} /></button></div>)}
                   {selectedProducts.length === 0 && <div className="empty-selection">Add products from your catalog to form an assembly.</div>}
                 </div>
-                <div className="form-footer"><span><CircleHelp size={14} />Unresolved interactions stay marked unknown.</span><button className="button button-primary" disabled={checking || selectedIds.length < 2} onClick={runCheck}>{checking ? <RefreshCw className="spin" size={16} /> : <ClipboardCheck size={16} />}{checking ? "Checking" : "Check assembly"}</button></div>
+                <div className="form-footer"><span><CircleHelp size={14} />Opening details are checked against selected products.</span><button className="button button-primary" disabled={checking || (selectedIds.length < 2 && !(selectedIds.length === 1 && Object.values(opening).some(Boolean)))} onClick={runCheck}>{checking ? <RefreshCw className="spin" size={16} /> : <ClipboardCheck size={16} />}{checking ? "Checking" : selectedIds.length < 2 ? "Check opening" : "Check assembly"}</button></div>
               </div>
               <div className="result-panel assembly-result">
-                {!checkResult ? <div className="empty-result"><div className="result-art"><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-center"><Layers3 size={25} /></div></div><div className="result-kicker">ASSEMBLY REPORT</div><h3>Ready when you are</h3><p>Choose at least two products to see sourced compatibility checks and gaps.</p><div className="rule-stat"><span className="stat-icon"><ShieldCheck size={17} /></span><span><b>{coverage?.summary?.total || 0} applicable pair checks</b><small>Generated from component roles</small></span></div></div> : <CheckResult result={checkResult} onCoverage={() => setPage("coverage")} />}
+                {!checkResult ? <div className="empty-result"><div className="result-art"><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-center"><Layers3 size={25} /></div></div><div className="result-kicker">ASSEMBLY REPORT</div><h3>Ready when you are</h3><p>Add two products for pair checks, or select one product and enter opening details to check fit.</p><div className="rule-stat"><span className="stat-icon"><ShieldCheck size={17} /></span><span><b>{coverage?.summary?.total || 0} applicable pair checks</b><small>Generated from component roles</small></span></div></div> : <CheckResult result={checkResult} onCoverage={() => setPage("coverage")} />}
               </div>
             </div>
             <div className="footnote"><ShieldCheck size={15} /><span>Pairwise results do not prove a multi-device assembly. A complete assembly assertion or field test is required for systems with three or more products.</span></div>
@@ -445,10 +513,12 @@ export default function ModelApp() {
 
         {page === "coverage" && <CoveragePage coverage={coverage} categories={categories} onRefresh={() => loadCoverage().catch((error) => setNotice(error.message))} onAssert={(row) => { const prior = data.assertions.find((assertion) => assertion.product_ids.length === 2 && assertion.product_ids.includes(row.product_a.id) && assertion.product_ids.includes(row.product_b.id)); setAssertionForm(prior ? { ...prior, conditions: JSON.stringify(prior.conditions, null, 2) } : { ...emptyAssertion, product_ids: [row.product_a.id, row.product_b.id] }); setShowAssertion(true); }} />}
 
-        {page === "rules" && <RulesPage rules={data.compatibilityRules} assertions={data.assertions} products={activeProducts} categories={categories} onAddRule={() => { setRuleForm({ ...emptyRule }); setShowRule(true); }} onEditRule={(rule) => { setRuleForm({ ...rule }); setShowRule(true); }} onRemoveRule={removeRule} onAddAssertion={() => { setAssertionForm({ ...emptyAssertion }); setShowAssertion(true); }} onEditAssertion={(assertion) => { setAssertionForm({ ...assertion, conditions: JSON.stringify(assertion.conditions, null, 2) }); setShowAssertion(true); }} onRemoveAssertion={removeAssertion} />}
+        {page === "rules" && <RulesPage rules={data.compatibilityRules} assertions={data.assertions} products={activeProducts} categories={categories} onAddRule={() => { setRuleForm({ ...emptyRule }); setShowRule(true); }} onEditRule={(rule) => { setRuleForm({ ...rule }); setShowRule(true); }} onRemoveRule={removeRule} onAddAssertion={() => { setAssertionForm({ ...emptyAssertion }); setShowAssertion(true); }} onEditAssertion={(assertion) => { setAssertionForm({ ...assertion, conditions: JSON.stringify(assertion.conditions, null, 2) }); setShowAssertion(true); }} onRemoveAssertion={removeAssertion} onImportBundle={() => evidenceImportInput.current?.click()} onDownloadTemplate={downloadEvidenceTemplate} importing={importing} />}
 
-        {page === "research" && <ResearchPage notes={data.researchNotes} />}
+        {page === "research" && <ResearchPage notes={data.researchNotes} onImportBundle={() => evidenceImportInput.current?.click()} onDownloadTemplate={downloadEvidenceTemplate} importing={importing} />}
       </main>
+
+      <input ref={evidenceImportInput} type="file" accept=".json,application/json" hidden onChange={importEvidenceBundle} />
 
       {showProduct && productForm && <Modal title={productForm.id ? "Edit product model" : "Add product model"} subtitle="Store a product once with its specs and source." onClose={() => setShowProduct(false)}><ProductForm form={productForm} setForm={setProductForm} categories={categories} statuses={data.evidenceStatuses} onSubmit={saveProduct} /></Modal>}
       {showRule && ruleForm && <Modal title={ruleForm.id ? "Edit reusable rule" : "Add reusable compatibility rule"} subtitle="A reusable rule evaluates a specific interface or specification." onClose={() => setShowRule(false)}><RuleForm form={ruleForm} setForm={setRuleForm} categories={categories} statuses={data.evidenceStatuses} onSubmit={saveRule} /></Modal>}
@@ -472,7 +542,7 @@ function HardwarePicker({ groups, categories, products, selectedIds, onSelect, o
   </div>;
 }
 
-function OpeningDetails({ opening, setOpening }) {
+function OpeningDetails({ opening, setOpening, preview }) {
   const update = (key, value) => setOpening((current) => ({ ...current, [key]: value }));
   return (
     <details className="opening-details" open>
@@ -481,12 +551,23 @@ function OpeningDetails({ opening, setOpening }) {
         <Field label="Door material"><Select value={opening.door_material} onChange={(value) => update("door_material", value)} options={[["", "Not specified"], ["wood", "Wood"], ["metal", "Metal"], ["aluminum", "Aluminum"], ["glass", "Glass"], ["other", "Other"]]} /></Field>
         <Field label="Frame material"><Select value={opening.frame_material} onChange={(value) => update("frame_material", value)} options={[["", "Not specified"], ["steel", "Steel"], ["wood", "Wood"], ["aluminum", "Aluminum"], ["glass", "Glass"], ["other", "Other"]]} /></Field>
         <Field label="Door configuration"><Select value={opening.configuration} onChange={(value) => update("configuration", value)} options={[["", "Not specified"], ["single", "Single"], ["pair", "Pair"]]} /></Field>
-        <Field label="Swing / handing"><Select value={opening.swing} onChange={(value) => update("swing", value)} options={[["", "Not specified"], ["left", "Left hand"], ["right", "Right hand"], ["left_reverse", "Left hand reverse"], ["right_reverse", "Right hand reverse"]]} /></Field>
+        <Field label="Handing"><Select value={opening.handing} onChange={(value) => update("handing", value)} options={[["", "Not specified"], ["left", "Left hand"], ["right", "Right hand"], ["left_reverse", "Left hand reverse"], ["right_reverse", "Right hand reverse"]]} /></Field>
+        <Field label="Swing direction"><Select value={opening.swing_direction} onChange={(value) => update("swing_direction", value)} options={[["", "Not specified"], ["inswing", "Inswing"], ["outswing", "Outswing"], ["double_egress", "Double egress"]]} /></Field>
         <Field label="Location"><Select value={opening.location} onChange={(value) => update("location", value)} options={[["", "Not specified"], ["interior", "Interior"], ["exterior", "Exterior"]]} /></Field>
         <Field label="Fire rated"><Select value={opening.fire_rated} onChange={(value) => update("fire_rated", value)} options={[["", "Not specified"], ["yes", "Yes"], ["no", "No"]]} /></Field>
         <Field label="Door width (in)"><input type="number" min="0" step="0.1" value={opening.width_in} onChange={(event) => update("width_in", event.target.value)} placeholder="Not specified" /></Field>
         <Field label="Door height (in)"><input type="number" min="0" step="0.1" value={opening.height_in} onChange={(event) => update("height_in", event.target.value)} placeholder="Not specified" /></Field>
         <Field label="Door weight (lb)"><input type="number" min="0" step="0.1" value={opening.weight_lb} onChange={(event) => update("weight_lb", event.target.value)} placeholder="Not specified" /></Field>
+        <Field label="Frame reveal depth (mm)"><input type="number" min="0" step="1" value={opening.reveal_depth_mm} onChange={(event) => update("reveal_depth_mm", event.target.value)} placeholder="Not specified" /></Field>
+      </div>
+      <div className={`opening-fit-preview ${preview ? `status-${preview.status}` : ""}`}>
+        {preview ? <>
+          <div className="opening-fit-heading"><StatusPill status={preview.status} /><b>{preview.message}</b></div>
+          {preview.findings?.map((finding, index) => <div className="opening-fit-finding" key={`${finding.product_a?.id || index}-${finding.product_a?.model || "opening"}`}>
+            {finding.product_a && <strong>{displayName(finding.product_a)}</strong>}
+            <span>{finding.rationale}</span>
+          </div>)}
+        </> : <span>Enter opening details to see how they apply to the selected products. This review updates as you edit.</span>}
       </div>
     </details>
   );
@@ -589,9 +670,9 @@ function CoveragePage({ coverage, categories, onRefresh, onAssert }) {
   </section>;
 }
 
-function RulesPage({ rules, assertions, products, categories, onAddRule, onEditRule, onRemoveRule, onAddAssertion, onEditAssertion, onRemoveAssertion }) {
+function RulesPage({ rules, assertions, products, categories, onAddRule, onEditRule, onRemoveRule, onAddAssertion, onEditAssertion, onRemoveAssertion, onImportBundle, onDownloadTemplate, importing }) {
   return <section className="content model-page">
-    <div className="page-heading"><div><h1>Rules & assertions</h1><p>Reusable specification checks and sourced exceptions for specific products or complete kits.</p></div></div>
+    <div className="page-heading"><div><h1>Rules & assertions</h1><p>Reusable specification checks and sourced exceptions for specific products or complete kits.</p></div><div className="page-heading-actions"><button className="button button-quiet" onClick={onImportBundle} disabled={importing}><Upload size={15} />{importing ? "Importing…" : "Import JSON"}</button><button className="text-link" onClick={onDownloadTemplate}>Download template <ArrowUpRight size={14} /></button></div></div>
     <div className="rules-toolbar"><button className="button button-primary" onClick={onAddRule}><Plus size={16} />Add reusable rule</button><button className="button button-quiet" onClick={onAddAssertion}><FilePlus2 size={16} />Add product combination</button></div>
     <div className="rule-banner"><div className="banner-icon"><ShieldCheck size={18} /></div><div><b>Only sourced rules contribute a verified result.</b><span>Research leads remain visible for review but cannot mark a combination compatible.</span></div></div>
     <div className="model-subheading"><div><h2>Reusable rules</h2><p>Apply one interface rule across matching component categories.</p></div><span className="total-pill">{rules.length}</span></div>
@@ -634,8 +715,8 @@ function RulesPage({ rules, assertions, products, categories, onAddRule, onEditR
   </section>;
 }
 
-function ResearchPage({ notes }) {
-  return <section className="content research-page"><div className="page-heading"><div><h1>Compatibility research</h1><p>Source-backed leads that guide product modeling. These are not compatibility decisions.</p></div><span className="total-pill">{notes.length} SOURCE NOTES</span></div><div className="research-banner"><div className="banner-icon"><CircleHelp size={18} /></div><div><b>Research lead only · not an approval</b><span>Use manufacturer documentation and field verification before marking a combination compatible.</span></div></div><div className="research-list">{notes.map((note) => <article className="research-card" key={note.id}><div className="research-card-heading"><div><h2>{note.topic}</h2><span className="research-status">{note.evidence_status === "documentation_needed" ? "DOCUMENTATION NEEDED" : "UNVERIFIED RESEARCH LEAD"}</span></div><a className="source-link" href={note.source_url} target="_blank" rel="noreferrer">View source <ArrowUpRight size={14} /></a></div><div className="research-components">{note.related_components}</div><p>{note.guidance}</p><a className="research-source-title" href={note.source_url} target="_blank" rel="noreferrer">{note.source_title}</a></article>)}</div></section>;
+function ResearchPage({ notes, onImportBundle, onDownloadTemplate, importing }) {
+  return <section className="content research-page"><div className="page-heading"><div><h1>Compatibility research</h1><p>Source-backed leads that guide product modeling. These are not compatibility decisions.</p></div><div className="page-heading-actions"><span className="total-pill">{notes.length} SOURCE NOTES</span><button className="button button-quiet" onClick={onImportBundle} disabled={importing}><Upload size={15} />{importing ? "Importing…" : "Import JSON"}</button><button className="text-link" onClick={onDownloadTemplate}>Download template <ArrowUpRight size={14} /></button></div></div><div className="research-banner"><div className="banner-icon"><CircleHelp size={18} /></div><div><b>Research lead only · not an approval</b><span>Use manufacturer documentation and field verification before marking a combination compatible.</span></div></div><div className="research-list">{notes.map((note) => <article className="research-card" key={note.id}><div className="research-card-heading"><div><h2>{note.topic}</h2><span className="research-status">{note.evidence_status === "documentation_needed" ? "DOCUMENTATION NEEDED" : "UNVERIFIED RESEARCH LEAD"}</span></div><a className="source-link" href={note.source_url} target="_blank" rel="noreferrer">View source <ArrowUpRight size={14} /></a></div><div className="research-components">{note.related_components}</div><p>{note.guidance}</p><a className="research-source-title" href={note.source_url} target="_blank" rel="noreferrer">{note.source_title}</a></article>)}</div></section>;
 }
 
 function CheckResult({ result, onCoverage }) {

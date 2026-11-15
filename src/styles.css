@@ -37,11 +37,11 @@ html[data-theme="dark"] .research-card{background:#1e1e1e;border-color:#373737;c
 .finding-title b{font-size:10px;color:#4b5852}
 .finding-card p{font-size:10px;line-height:1.5;color:#75817b;margin:8px 0}
 .status-pill{display:inline-flex;align-items:center;width:max-content;padding:4px 7px;border-radius:4px;background:#f0f2f1;color:#66716c;font:9px var(--mono);letter-spacing:.1px;text-transform:capitalize}
-.status-compatible,.status-company_approved{background:#e8f2ec;color:#367254}
-.status-incompatible{background:#f8e9e7;color:#a94f47}
-.status-conditional{background:#fbf1dc;color:#98702b}
-.status-unverified,.status-research_lead,.status-documentation_needed{background:#f2efe7;color:#8a7440}
-.status-field_verified,.status-manufacturer_document{background:#eaf0f5;color:#4c6b85}
+.status-pill.status-compatible,.status-pill.status-company_approved{background:#e8f2ec;color:#367254}
+.status-pill.status-incompatible{background:#f8e9e7;color:#a94f47}
+.status-pill.status-conditional{background:#fbf1dc;color:#98702b}
+.status-pill.status-unverified,.status-pill.status-research_lead,.status-pill.status-documentation_needed{background:#f2efe7;color:#8a7440}
+.status-pill.status-field_verified,.status-pill.status-manufacturer_document{background:#eaf0f5;color:#4c6b85}
 .catalog-actions,.rules-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 15px}
 .catalog-actions .text-link{margin-left:auto}
 .category-chips{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 14px}
@@ -106,9 +106,51 @@ html[data-theme="dark"] .assertion-product-list label{color:#ccc}
 .opening-fields .field{gap:5px}
 .opening-fields .field>span{font-size:9px}
 .opening-fields .field input,.opening-fields .select-wrap select{height:32px;font-size:10px}
+.opening-fit-preview{display:grid;gap:6px;margin-top:12px;padding:9px 10px;border:1px solid #e3e9e5;border-radius:5px;background:#f4f7f5;font-size:9px;color:#62716a;line-height:1.45}
+.opening-fit-heading{display:flex;align-items:center;gap:8px;color:#45564e}
+.opening-fit-heading b{font-size:10px;font-weight:600}
+.opening-fit-finding{display:grid;gap:2px;padding-top:5px;border-top:1px solid #e0e7e2}
+.opening-fit-finding strong{font-size:9px;color:#34443c}
+.opening-fit-finding span{font-size:9px}
+html[data-theme="dark"] .opening-fit-preview{background:#191919;border-color:#3a3a3a;color:#aaa}
+html[data-theme="dark"] .opening-fit-heading,html[data-theme="dark"] .opening-fit-finding strong{color:#ddd}
+html[data-theme="dark"] .opening-fit-finding{border-color:#373737}
+html[data-theme="dark"] .assembly-result-content{background:transparent;color:#ddd}
+html[data-theme="dark"] .assembly-result-content h3{color:#ededed}
+html[data-theme="dark"] .assembly-result-content .result-kicker{color:#aaa}
+html[data-theme="dark"] .status-pill.status-compatible,html[data-theme="dark"] .status-pill.status-company_approved{background:#25362b;color:#a8d3b2}
+html[data-theme="dark"] .status-pill.status-incompatible{background:#3b2827;color:#e0a29c}
+html[data-theme="dark"] .status-pill.status-conditional{background:#3b3322;color:#dfc17c}
+html[data-theme="dark"] .status-pill.status-unverified,html[data-theme="dark"] .status-pill.status-research_lead,html[data-theme="dark"] .status-pill.status-documentation_needed{background:#39362d;color:#d6c28d}
+html[data-theme="dark"] .status-pill.status-field_verified,html[data-theme="dark"] .status-pill.status-manufacturer_document{background:#28313a;color:#afc4d9}
 html[data-theme="dark"] .opening-details{background:#222;border-color:#373737}
 html[data-theme="dark"] .opening-details>summary{color:#ddd}
 html[data-theme="dark"] .opening-details>summary span{color:#aaa}
+/* Slightly larger UI text for the dense compatibility workspace. */
+.page-heading p{font-size:14px}
+.page-heading-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.section-heading h2,.catalog-toolbar h2{font-size:15px}
+.section-heading p,.catalog-toolbar p{font-size:11px}
+.field>span{font-size:11px}
+.field input,.field textarea,.select-wrap select{font-size:12px}
+.opening-details>summary{font-size:11px}
+.opening-details>summary span{font-size:10px}
+.opening-fields .field>span,.hardware-picker-grid .field>span{font-size:10px}
+.opening-fields .field input,.opening-fields .select-wrap select{font-size:11px}
+.opening-fit-preview{font-size:10px}
+.opening-fit-heading b{font-size:11px}
+.opening-fit-finding strong,.opening-fit-finding span{font-size:10px}
+.hardware-picker-heading b{font-size:11px}
+.hardware-picker-heading span{font-size:10px}
+.hardware-picker-grid .select-wrap select{font-size:11px}
+.assembly-product b{font-size:12px}
+.assembly-product>div>span{font-size:10px}
+.empty-selection,.assembly-result-content>p{font-size:12px}
+.finding-title b,.finding-card p{font-size:11px}
+.status-pill{font-size:10px}
+.form-footer>span{font-size:10px}
+html[data-theme="dark"] .field>span{font-size:11px}
+html[data-theme="dark"] .field input,html[data-theme="dark"] .field textarea,html[data-theme="dark"] .select-wrap select{font-size:12px}
 @media(max-width:900px){.model-check-grid{grid-template-columns:1fr}.assembly-result{min-height:unset}.coverage-summary{grid-template-columns:repeat(3,minmax(90px,1fr))}}
 @media(max-width:620px){.add-product-row{align-items:stretch;flex-direction:column}.coverage-summary{grid-template-columns:repeat(2,minmax(90px,1fr))}.modal-fields,.assertion-product-list{grid-template-columns:1fr}.field-wide{grid-column:auto}.catalog-actions .text-link{margin-left:0}.assembly-result-content{padding:18px}}
 @media(max-width:720px){.opening-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.opening-details>summary{align-items:flex-start;flex-direction:column;gap:4px}}
