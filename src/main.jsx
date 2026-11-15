@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faMoon, faSun } from "@fortawesome/free-solid-svg-icons";
 import {
   Activity,
   ArrowUpRight,
@@ -32,6 +34,11 @@ const FIELD_KEYS = [
   "fire_rated",
   "strike",
   "operator",
+  "automatic_operator",
+  "activation_device",
+  "lock_interface",
+  "power_architecture",
+  "safety_device",
   "existing_hardware",
   "proposed_hardware",
   "voltage",
@@ -39,12 +46,61 @@ const FIELD_KEYS = [
   "door_contact",
   "request_to_exit",
 ];
+const FIELD_GROUPS = [
+  {
+    title: "Door & frame",
+    description: "Opening construction and handing",
+    fields: [
+      "door_material",
+      "frame_material",
+      "swing",
+      "door_type",
+      "door_location",
+      "fire_rated",
+    ],
+  },
+  {
+    title: "Locking hardware",
+    description: "Existing and proposed lock components",
+    fields: ["strike", "existing_hardware", "proposed_hardware", "lock_interface"],
+  },
+  {
+    title: "Automatic door operator (ADO) & controls",
+    description: "Operator, activation, power, and safety devices",
+    fields: [
+      "automatic_operator",
+      "operator",
+      "activation_device",
+      "controller",
+      "voltage",
+      "power_architecture",
+      "safety_device",
+      "door_contact",
+      "request_to_exit",
+    ],
+  },
+];
 const FIXED_OPTIONS = {
   swing: ["Left", "Right", "Left Reverse", "Right Reverse", "None"],
   door_type: ["Single", "Double"],
   fire_rated: ["Yes", "No"],
   door_contact: ["Yes", "No", "Not required"],
   request_to_exit: ["Yes", "No", "Not required"],
+};
+const FIELD_LABELS = {
+  automatic_operator: "Automatic operator model",
+  activation_device: "Activation device",
+  lock_interface: "Lock interface",
+  power_architecture: "Power arrangement",
+  safety_device: "Safety device",
+  operator: "Operator handing / ADO type",
+};
+const CATEGORY_LABELS = {
+  automatic_operator: "Automatic operator model",
+  activation_device: "Operator activation device",
+  lock_interface: "Operator lock interface",
+  power_architecture: "Power arrangement",
+  safety_device: "Operator safety device",
 };
 const EMPTY = Object.fromEntries(FIELD_KEYS.map((k) => [k, ""]));
 const request = async (url, options = {}) => {
@@ -68,6 +124,11 @@ function App() {
     [page, setPage] = useState("verify"),
     [selection, setSelection] = useState(EMPTY);
   const [databaseState, setDatabaseState] = useState("connecting");
+  const [themeMode, setThemeMode] = useState(() => {
+    const savedMode = window.localStorage.getItem("door-hardware-theme");
+    return ["auto", "light", "dark"].includes(savedMode) ? savedMode : "auto";
+  });
+  const [localTime, setLocalTime] = useState(() => new Date());
   const [result, setResult] = useState(null),
     [checking, setChecking] = useState(false),
     [query, setQuery] = useState("");
@@ -79,6 +140,27 @@ function App() {
     });
   const [ruleForm, setRuleForm] = useState(null),
     [showRule, setShowRule] = useState(false);
+  const isNight = localTime.getHours() >= 18 || localTime.getHours() < 6;
+  const activeTheme =
+    themeMode === "auto" ? (isNight ? "dark" : "light") : themeMode;
+  const nextTheme = isNight ? "Light" : "Dark";
+  const nextThemeTime = isNight ? "6 AM" : "6 PM";
+  const themeTitle =
+    themeMode === "auto"
+      ? `Automatic theme · switches to ${nextTheme.toLowerCase()} at ${nextThemeTime} local time. Click to override.`
+      : `${activeTheme} theme selected · click to resume automatic time-based theme.`;
+  const toggleTheme = () =>
+    setThemeMode((mode) =>
+      mode === "auto" ? (activeTheme === "dark" ? "light" : "dark") : "auto",
+    );
+  useEffect(() => {
+    const clockInterval = window.setInterval(() => setLocalTime(new Date()), 60000);
+    return () => window.clearInterval(clockInterval);
+  }, []);
+  useEffect(() => {
+    document.documentElement.dataset.theme = activeTheme;
+    window.localStorage.setItem("door-hardware-theme", themeMode);
+  }, [activeTheme, themeMode]);
   const refresh = async () => {
     try {
       const nextData = await request("/api/bootstrap");
@@ -118,7 +200,7 @@ function App() {
   const itemCounts = useMemo(
     () =>
       Object.fromEntries(
-        Object.keys(data?.categories || {}).map((c) => [
+        Object.keys({ ...CATEGORY_LABELS, ...(data?.categories || {}) }).map((c) => [
           c,
           data?.items.filter((i) => i.category === c).length || 0,
         ]),
@@ -205,17 +287,24 @@ function App() {
       setNotice(e.message);
     }
   };
-  const categoryField = (key) => data?.fields[key] || key;
+  const categoryField = (key) =>
+    FIELD_LABELS[key] ||
+    data?.fields[key] ||
+    key.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const categoryOptions = { ...CATEGORY_LABELS, ...(data?.categories || {}) };
+  const categoryLabel = (key) =>
+    categoryOptions[key] ||
+    FIELD_LABELS[key] ||
+    key.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
   const filled = FIELD_KEYS.filter((k) => selection[k]).length;
   const shownItems = (data?.items || []).filter((i) =>
-    `${i.name} ${data.categories[i.category]}`
+    `${i.name} ${categoryLabel(i.category)}`
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
   if (!data)
     return (
       <div className="loading">
-        <div className="brandmark">D</div>
         <p>Opening your hardware library…</p>
         {notice && <p className="error-text">{notice}</p>}
       </div>
@@ -224,7 +313,6 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brandmark">D</div>
           <div>
             <strong>Door Hardware Checker</strong>
             <span>by Pro Security Controls Inc.</span>
@@ -290,12 +378,29 @@ function App() {
               <RefreshCw className="spin" size={15} />
             )}
           </div>
-          <a className="version company-link" href="https://egress-systems.com/" target="_blank" rel="noreferrer">EGRESS-SYSTEMS.COM&nbsp; ↗</a>
         </div>
       </aside>
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-right">
+            <button
+              className="theme-toggle"
+              type="button"
+              onClick={toggleTheme}
+              aria-label={themeTitle}
+            >
+              <FontAwesomeIcon
+                icon={
+                  themeMode === "auto"
+                    ? isNight
+                      ? faSun
+                      : faMoon
+                    : activeTheme === "dark"
+                      ? faMoon
+                      : faSun
+                }
+              />
+            </button>
             <span className="sync-status">
               <span
                 className={`live-dot ${databaseState === "offline" ? "is-offline" : databaseState === "saving" ? "is-saving" : ""}`}
@@ -345,44 +450,51 @@ function App() {
                     {filled} / {FIELD_KEYS.length} SET
                   </span>
                 </div>
-                <div className="fields-grid">
-                  {FIELD_KEYS.map((key, index) => (
-                    <label
-                      className={`field ${index === 0 || index === 6 ? "field-break" : ""}`}
-                      key={key}
-                    >
-                      <span>
-                        {categoryField(key)}
-                        {[
-                          "door_material",
-                          "frame_material",
-                          "strike",
-                          "operator",
-                          "proposed_hardware",
-                        ].includes(key) && <i>*</i>}
-                      </span>
-                      <div className="select-wrap">
-                        <select
-                          value={selection[key]}
-                          onChange={(e) =>
-                            setSelection({
-                              ...selection,
-                              [key]: e.target.value,
-                            })
-                          }
-                        >
-                          <option value="">
-                            Select {categoryField(key).toLowerCase()}
-                          </option>
-                          {options(key).map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown size={15} />
+                <div className="field-groups">
+                  {FIELD_GROUPS.map((group) => (
+                    <section className="field-group" key={group.title}>
+                      <div className="field-group-heading">
+                        <h3>{group.title}</h3>
+                        <p>{group.description}</p>
                       </div>
-                    </label>
+                      <div className="fields-grid">
+                        {group.fields.map((key) => (
+                          <label className="field" key={key}>
+                            <span>
+                              {categoryField(key)}
+                              {[
+                                "door_material",
+                                "frame_material",
+                                "strike",
+                                "operator",
+                                "proposed_hardware",
+                              ].includes(key) && <i>*</i>}
+                            </span>
+                            <div className="select-wrap">
+                              <select
+                                value={selection[key]}
+                                onChange={(e) =>
+                                  setSelection({
+                                    ...selection,
+                                    [key]: e.target.value,
+                                  })
+                                }
+                              >
+                                <option value="">
+                                  Select {categoryField(key).toLowerCase()}
+                                </option>
+                                {options(key).map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown size={15} />
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </section>
                   ))}
                 </div>
                 <div className="form-footer">
@@ -537,7 +649,7 @@ function App() {
                           setItemForm({ ...itemForm, category: e.target.value })
                         }
                       >
-                        {Object.entries(data.categories).map(([k, v]) => (
+                        {Object.entries(categoryOptions).map(([k, v]) => (
                           <option value={k} key={k}>
                             {v}
                           </option>
@@ -608,7 +720,7 @@ function App() {
                   </div>
                 </div>
                 <div className="category-chips">
-                  {Object.entries(data.categories).map(([k, v]) => (
+                  {Object.entries(categoryOptions).map(([k, v]) => (
                     <span key={k}>
                       {v}
                       <b>{itemCounts[k] || 0}</b>
@@ -624,7 +736,7 @@ function App() {
                       <div className="item-info">
                         <b>{item.name}</b>
                         <span>
-                          {data.categories[item.category]}
+                          {categoryLabel(item.category)}
                           {item.notes ? ` · ${item.notes}` : ""}
                         </span>
                       </div>

@@ -13,6 +13,11 @@ CATEGORIES = {
     "frame_material": "Frame material",
     "strike": "Strike / lock",
     "operator": "Operator / ADO",
+    "automatic_operator": "Automatic operator model",
+    "activation_device": "Operator activation device",
+    "lock_interface": "Operator lock interface",
+    "power_architecture": "Power arrangement",
+    "safety_device": "Operator safety device",
     "existing_hardware": "Existing hardware",
     "proposed_hardware": "Proposed hardware",
     "voltage": "Voltage",
@@ -22,7 +27,12 @@ CATEGORIES = {
 
 FIELDS = {
     "door_material": "Door material", "frame_material": "Frame material",
-    "strike": "Strike / lock", "operator": "Operator / ADO",
+    "strike": "Strike / lock", "operator": "Operator handing / ADO type",
+    "automatic_operator": "Automatic operator model",
+    "activation_device": "Activation device",
+    "lock_interface": "Lock interface",
+    "power_architecture": "Power arrangement",
+    "safety_device": "Safety device",
     "existing_hardware": "Existing hardware", "voltage": "Voltage",
     "controller": "Controller / integration", "swing": "Door swing",
     "proposed_hardware": "Proposed hardware", "door_type": "Door configuration",
@@ -30,11 +40,21 @@ FIELDS = {
     "door_contact": "Door contact", "request_to_exit": "Request to exit",
 }
 
+MODEL_SPECIFIC_FIELDS = {
+    "automatic_operator", "activation_device", "lock_interface",
+    "power_architecture", "safety_device",
+}
+
 SEED_ITEMS = {
     "door_material": ["Wood", "MDF", "Glass", "Metal"],
     "frame_material": ["Steel", "Wood", "Aluminum", "None"],
     "strike": ["Standard Strike 12V", "Mortise Strike 24V", "Magnetic Lock"],
     "operator": ["LH", "LH Reverse", "RH", "RH Reverse", "Maglock", "Electrical Crashbar", "Not Opening", "None"],
+    "automatic_operator": ["LCN 9540 Senior Swing", "Norton Rixson 6000 Series", "Norton Rixson 5800 ADAEZ Pro", "dormakaba ED100", "dormakaba ED250", "Record 8100"],
+    "activation_device": ["Push plate (hardwired)", "Push plate (wireless/RF)", "Touchless wave sensor", "Card reader", "Building automation signal"],
+    "lock_interface": ["Electric strike", "Electric latch retraction exit device"],
+    "power_architecture": ["Operator line-voltage feed", "Separate low-voltage access-control supply"],
+    "safety_device": ["Presence sensor", "Safety mat", "Guide rail"],
     "existing_hardware": ["None", "Standard Strike", "Mortise Lock", "Electric Lockset", "Maglock", "Electric Crashbar", "Panic Bar"],
     "proposed_hardware": ["None", "Standard Strike", "Mortise Lock", "Electric Lockset", "Maglock", "Electric Crashbar", "Panic Bar"],
     "voltage": ["12V DC", "24V AC", "24V DC"],
@@ -73,10 +93,11 @@ def initialize():
         db.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, category TEXT NOT NULL, name TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '', UNIQUE(category, name))")
         db.execute("CREATE TABLE IF NOT EXISTS rules (id INTEGER PRIMARY KEY, name TEXT NOT NULL, requirements TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
         db.execute("CREATE TABLE IF NOT EXISTS research_notes (id INTEGER PRIMARY KEY, topic TEXT NOT NULL, related_components TEXT NOT NULL, guidance TEXT NOT NULL, source_title TEXT NOT NULL, source_url TEXT NOT NULL, evidence_status TEXT NOT NULL DEFAULT 'research_lead', UNIQUE(topic, source_url))")
-        count = db.execute("SELECT count(*) FROM items").fetchone()[0]
-        if count == 0:
-            for category, names in SEED_ITEMS.items():
-                db.executemany("INSERT INTO items(category,name) VALUES (?,?)", [(category, name) for name in names])
+        for category, names in SEED_ITEMS.items():
+            db.executemany(
+                "INSERT OR IGNORE INTO items(category,name,notes) VALUES (?,?,?)",
+                [(category, name, seed_item_note(category, name)) for name in names],
+            )
         if db.execute("SELECT count(*) FROM rules").fetchone()[0] == 0:
             db.executemany("INSERT INTO rules(name,requirements,notes) VALUES (?,?,?)", [(name, json.dumps(req), note) for name, req, note in SEED_RULES])
         db.executemany(
@@ -86,6 +107,13 @@ def initialize():
 
 def item_dict(row):
     return {"id": row["id"], "category": row["category"], "name": row["name"], "notes": row["notes"]}
+
+def seed_item_note(category, name):
+    if category == "automatic_operator":
+        return f"Model family named in the ZenSupply buying guide; research lead only, verify exact model against manufacturer documentation. Source: {OPERATOR_GUIDE_URL}"
+    if category in {"activation_device", "lock_interface", "power_architecture", "safety_device"}:
+        return f"Device type or arrangement described in the ZenSupply buying guide; not a compatibility approval. Verify exact product details. Source: {OPERATOR_GUIDE_URL}"
+    return ""
 
 def rule_dict(row):
     return {"id": row["id"], "name": row["name"], "requirements": json.loads(row["requirements"]), "notes": row["notes"], "updated_at": row["updated_at"]}
@@ -146,6 +174,10 @@ class Handler(BaseHTTPRequestHandler):
         matches = []
         for rule in rules:
             req = rule["requirements"]
+            # Legacy sample rules predate exact operator/product selection.
+            # They must not verify a setup after a specific device is selected.
+            if any(data.get(key) and req.get(key) != data.get(key) for key in MODEL_SPECIFIC_FIELDS):
+                continue
             # Empty requirements represent a wildcard; a verdict needs a fully specified rule.
             constrained = {k:v for k,v in req.items() if v not in (None, "", "Any")}
             if constrained and all(data.get(k) == v for k,v in constrained.items()):
