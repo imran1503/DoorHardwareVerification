@@ -1,21 +1,32 @@
 # Door Hardware Checker — Pro Security Controls Inc.
 
-For Prosecurity Controls Inc. and the Egress Systems website: [egress-systems.com](https://egress-systems.com/).
-
-A React interface and local SQLite database for checking and maintaining door hardware compatibility records. The app deliberately reports an unrecorded combination as **unverified**; it does not infer that untested hardware will work.
+A React interface and local SQLite database for recording exact hardware models, their specifications, and evidence-backed compatibility. Missing evidence is shown as **unverified**; product category or similarity alone never implies compatibility.
 
 ## Run locally
 
 Requirements: Python 3.10+ and Node.js 18+.
 
-1. Install the frontend packages once with `npm install`.
-2. In one terminal, run `python server.py` from this folder. It creates `doorhardware.db` beside the server and starts the API at `http://127.0.0.1:8000`.
-3. In a second terminal, run `npm run dev` and open the local URL printed by Vite (usually `http://localhost:5173`).
+1. Install frontend packages with `npm install`.
+2. In one terminal, run `python server.py` from this folder. This creates `doorhardware.db` beside the server and starts the API at `http://127.0.0.1:8000`.
+3. In a second terminal, run `npm run dev` and open the Vite URL (usually `http://localhost:5173`).
 
-The SQLite file is the source of truth and is easy to back up or inspect with any SQLite editor. Add hardware in **Hardware library** and confirmed combinations in **Compatibility rules**. The database starts with the project's original lookup values and four example records from `SQL/populateTables.sql`.
+Restart `server.py` after backend changes. SQLite is the source of truth; back up `doorhardware.db` to preserve catalog and evidence records.
 
-For a production deployment, put the API and built frontend behind an authenticated company service and add a review / approval process for rule changes. The current local build is intended for development and does not include user accounts or access control.
+## Maintaining the compatibility library
+
+- **Product catalog:** add each exact make/model once. Put comparable facts in the Specifications JSON object (for example `{"input_voltage":"24V DC","activation_input":"dry_contact"}`). Use consistent keys and values across models so reusable rules can compare them.
+- **Opening details:** enter door/frame materials, configuration, handing, location, fire-rating, and dimensions/weight when checking an assembly. A product's Specifications JSON can include sourced `opening_limits`, such as `{"opening_limits":{"max_width_in":48,"max_weight_lb":250,"door_materials":["wood","metal"],"supports_fire_rated":true}}`. The check compares only limits explicitly recorded for that model; missing model limits or missing required opening details remain unverified.
+- **CSV import:** use **Download CSV template** in the catalog, then **Import CSV**. `specifications` must be valid JSON in each CSV cell. A repeated category, manufacturer, and model updates that catalog row.
+- **Evidence status:** research leads are discovery notes only. Manufacturer documentation, field-verified, and company-approved records need a source URL. The checker uses sourced evidence and shows missing or untrusted facts as unverified.
+- **Reusable rules:** use for repeatable interface facts between component categories, such as matching a device output to a controller input. Choose a rule only when the cited source supports the comparison and its pass/fail outcomes.
+- **Specific combinations:** use assertions for exact product pairs or a complete multi-device kit, such as a CX-33 washroom setup with push buttons, emergency release, push-to-unlock, and alarm. Include the source, conditions, and rationale. A multi-product assertion does not automatically apply to its subsets.
+- **Coverage:** relevant product pairs are generated from declared component interactions; the app does not store an all-to-all X matrix. Add categories to `INTERACTION_PAIRS` in `server.py` when a new component relationship should be tracked. Each applicable pair remains visible until it has a sourced result.
+- **Assembly checks:** pairwise passes do not prove that a three-or-more-product system works as a whole. Record an assembly-level assertion or field test for the complete set.
+
+The ZenSupply operator guide is retained as research leads for operator families and design questions. It is not treated as manufacturer proof or compatibility approval. The database also preserves the earlier lookup tables and sample rules; the new model does not use those legacy examples to approve exact-model assemblies.
 
 ## API
 
-The Python API uses only the standard library. `GET /api/bootstrap` returns the editable catalog and rules. `POST /api/check` evaluates a selection. `POST /api/items` and `POST /api/rules` add records; rules can also be edited or removed through the app.
+The Python API uses only the standard library. `GET /api/bootstrap` returns the catalog, categories, rules, assertions, and research notes. `GET /api/coverage` generates relevant pair coverage. `POST /api/compatibility/check` evaluates a selected assembly. Product, rule, assertion, and CSV import endpoints support the editing screens; the older `/api/check` endpoint remains for compatibility with the original UI.
+
+This local development build has no authentication or access control. Use an authenticated company service and a review process before hosting it for shared production use.
