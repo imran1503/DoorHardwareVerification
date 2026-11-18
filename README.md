@@ -7,10 +7,12 @@ A React interface and local SQLite database for recording exact hardware models,
 Requirements: Python 3.10+ and Node.js 18+.
 
 1. Install frontend packages with `npm install`.
-2. In one terminal, run `python server.py` from this folder. This creates `doorhardware.db` beside the server and starts the API at `http://127.0.0.1:8000`.
+2. In one terminal, run `python3 -m src.server` from this folder. This creates `doorhardware.db` in the project root and starts the API at `http://127.0.0.1:8000`.
 3. In a second terminal, run `npm run dev` and open the Vite URL (usually `http://localhost:5173`).
 
-Restart `server.py` after backend changes. SQLite is the source of truth; back up `doorhardware.db` to preserve catalog and evidence records.
+Restart the API after backend changes. SQLite is the source of truth; back up `doorhardware.db` to preserve catalog and evidence records.
+
+Backend code lives in `src/server/`: `__main__.py` starts the app, `api.py` defines HTTP routes, `database.py` manages SQLite, `catalog.py` holds labels and reference data, `seed_data.py` loads product/evidence records, `compatibility.py` evaluates product pairs, and `opening_fit.py` checks opening constraints. Run backend tests with `python3 -m unittest discover -s tests -v`.
 
 ## Maintaining the compatibility library
 
@@ -21,7 +23,7 @@ Restart `server.py` after backend changes. SQLite is the source of truth; back u
 - **Evidence status:** research leads are discovery notes only. Manufacturer documentation, field-verified, and company-approved records need a source URL. The checker uses sourced evidence and shows missing or untrusted facts as unverified.
 - **Reusable rules:** use for repeatable interface facts between component categories, such as matching a device output to a controller input. Choose a rule only when the cited source supports the comparison and its pass/fail outcomes.
 - **Specific combinations:** use assertions for exact product pairs or a complete multi-device kit, such as a CX-33 washroom setup with push buttons, emergency release, push-to-unlock, and alarm. Include the source, conditions, and rationale. A multi-product assertion does not automatically apply to its subsets.
-- **Coverage:** relevant product pairs are generated from declared component interactions; the app does not store an all-to-all X matrix. Add categories to `INTERACTION_PAIRS` in `server.py` when a new component relationship should be tracked. Each applicable pair remains visible until it has a sourced result.
+- **Coverage:** relevant product pairs are generated from declared component interactions; the app does not store an all-to-all X matrix. Add categories to `INTERACTION_PAIRS` in `src/server/catalog.py` when a new component relationship should be tracked. Each applicable pair remains visible until it has a sourced result.
 - **Assembly checks:** pairwise passes do not prove that a three-or-more-product system works as a whole. Record an assembly-level assertion or field test for the complete set.
 
 ### JSON evidence bundle format
@@ -73,7 +75,7 @@ The downloaded template starts with empty arrays. Add records to any section, le
 }
 ```
 
-Allowed rule comparisons are `equals`, `not_equals`, `less_or_equal`, `greater_or_equal`, and `contains`. Rule categories must use the catalog category keys shown in `PRODUCT_CATEGORIES` in `server.py`. Assertion outcomes are `compatible`, `incompatible`, or `conditional`. Evidence statuses are `research_lead`, `manufacturer_document`, `field_verified`, and `company_approved`; only use a verified status when the source supports that claim. `conditions` must be a JSON object. The example links and condition are placeholders and should be replaced before import.
+Allowed rule comparisons are `equals`, `not_equals`, `less_or_equal`, `greater_or_equal`, and `contains`. Rule categories must use the catalog category keys shown in `PRODUCT_CATEGORIES` in `src/server/catalog.py`. Assertion outcomes are `compatible`, `incompatible`, or `conditional`. Evidence statuses are `research_lead`, `manufacturer_document`, `field_verified`, and `company_approved`; only use a verified status when the source supports that claim. `conditions` must be a JSON object. The example links and condition are placeholders and should be replaced before import.
 
 The ZenSupply operator guide is retained as research leads for operator families and design questions. It is not treated as manufacturer proof or compatibility approval. The database also preserves the earlier lookup tables and sample rules; the new model does not use those legacy examples to approve exact-model assemblies.
 
