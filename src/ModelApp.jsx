@@ -433,6 +433,22 @@ export default function ModelApp() {
     }
   };
 
+  const loadExampleAssembly = () => {
+    const exampleProducts = [
+      ["washroom_control", "Camden Controls", "CX-WC16-PS-M1"],
+      ["electric_strike", "Camden Controls", "CX-ED1799L-8"],
+    ].map(([category, manufacturer, model]) =>
+      activeProducts.find((product) => product.category === category && product.manufacturer === manufacturer && product.model === model),
+    );
+    if (exampleProducts.some((product) => !product)) {
+      setNotice("The documented example products are not available in the active catalog.");
+      return;
+    }
+    setSelectedIds(exampleProducts.map((product) => String(product.id)));
+    setCheckResult(null);
+    setNotice("Loaded a manufacturer-documented compatible kit and strike. Select Check assembly to run it.");
+  };
+
   if (!data) {
     return (
       <div className="loading">
@@ -493,7 +509,7 @@ export default function ModelApp() {
             <div className="model-check-grid">
               <div className="form-panel assembly-panel">
                 <div className="section-heading"><div className="section-icon"><ClipboardCheck size={18} /></div><div><h2>Products in this opening</h2><p>Add the components you want to check together.</p></div><span className="step-chip">{selectedIds.length} SELECTED</span></div>
-                <OpeningDetails opening={opening} setOpening={setOpening} preview={openingPreview} />
+                <OpeningDetails opening={opening} setOpening={setOpening} preview={openingPreview} onExample={loadExampleAssembly} />
                 <HardwarePicker groups={hardwareGroups} categories={categories} products={activeProducts} selectedIds={selectedIds} onSelect={(id) => { setSelectedIds((ids) => ids.includes(id) ? ids : [...ids, id]); setCheckResult(null); }} onAddProduct={() => setPage("products")} />
                 <div className="assembly-products">
                   {selectedProducts.map((product) => <div className="assembly-product" key={product.id}><div><b>{displayName(product)}</b><span>{categories[product.category] || product.category} · <StatusPill status={product.evidence_status} /></span></div><button className="icon-button" aria-label={`Remove ${displayName(product)}`} onClick={() => { setSelectedIds((ids) => ids.filter((id) => Number(id) !== product.id)); setCheckResult(null); }}><X size={16} /></button></div>)}
@@ -532,8 +548,9 @@ function HardwarePicker({ groups, categories, products, selectedIds, onSelect, o
     <div className="hardware-picker-heading"><div><b>Add hardware by type</b><span>Choose exact models from the catalog. Add a model there if its list is empty.</span></div><button className="text-link" type="button" onClick={onAddProduct}><Plus size={13} />Add to catalog</button></div>
     <div className="hardware-picker-grid">
       {groups.map((group) => {
-        const options = group.categories.flatMap((category) => products.filter((product) => product.category === category && !selectedIds.includes(String(product.id))));
-        return <label className="field" key={group.label}><span>{group.label}</span><div className="select-wrap"><select value="" onChange={(event) => { if (event.target.value) onSelect(String(event.target.value)); }}><option value="">{options.length ? "Select from catalog" : "No models in catalog yet"}</option>{group.categories.map((category) => {
+        const selectedInGroup = [...selectedIds].reverse().map((id) => products.find((product) => String(product.id) === String(id))).find((product) => product && group.categories.includes(product.category));
+        const options = group.categories.flatMap((category) => products.filter((product) => product.category === category && (!selectedIds.includes(String(product.id)) || product.id === selectedInGroup?.id)));
+        return <label className="field" key={group.label}><span>{group.label}</span><div className="select-wrap"><select value={selectedInGroup ? String(selectedInGroup.id) : ""} onChange={(event) => { if (event.target.value) onSelect(String(event.target.value)); }}><option value="">{options.length ? "Select from catalog" : "No models in catalog yet"}</option>{group.categories.map((category) => {
           const categoryProducts = options.filter((product) => product.category === category);
           return categoryProducts.length ? <optgroup key={category} label={categories[category] || category}>{categoryProducts.map((product) => <option key={product.id} value={product.id}>{displayName(product)}</option>)}</optgroup> : null;
         })}</select><ChevronDown size={15} /></div></label>;
@@ -542,11 +559,11 @@ function HardwarePicker({ groups, categories, products, selectedIds, onSelect, o
   </div>;
 }
 
-function OpeningDetails({ opening, setOpening, preview }) {
+function OpeningDetails({ opening, setOpening, preview, onExample }) {
   const update = (key, value) => setOpening((current) => ({ ...current, [key]: value }));
   return (
     <details className="opening-details" open>
-      <summary>Opening details <span>Used to check the selected products against this door</span></summary>
+      <summary><b>Opening details</b><span>Used to check the selected products against this door</span><button className="button button-quiet opening-example-button" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); onExample(); }}>Example</button></summary>
       <div className="opening-fields">
         <Field label="Door material"><Select value={opening.door_material} onChange={(value) => update("door_material", value)} options={[["", "Not specified"], ["wood", "Wood"], ["metal", "Metal"], ["aluminum", "Aluminum"], ["glass", "Glass"], ["other", "Other"]]} /></Field>
         <Field label="Frame material"><Select value={opening.frame_material} onChange={(value) => update("frame_material", value)} options={[["", "Not specified"], ["steel", "Steel"], ["wood", "Wood"], ["aluminum", "Aluminum"], ["glass", "Glass"], ["other", "Other"]]} /></Field>

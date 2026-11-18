@@ -102,6 +102,8 @@ html[data-theme="dark"] .assertion-product-list label{color:#ccc}
 .opening-details{margin:0 0 16px;padding:11px 12px;border:1px solid #e7ece9;border-radius:6px;background:#fbfcfb}
 .opening-details>summary{display:flex;align-items:baseline;gap:9px;cursor:pointer;color:#47564e;font-size:10px;font-weight:600;list-style-position:inside}
 .opening-details>summary span{font-size:9px;font-weight:400;color:#8b9690}
+.opening-details>summary b{font:inherit;font-weight:600}
+.opening-example-button{margin-left:auto;padding:5px 10px;font-size:10px;line-height:1}
 .opening-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin-top:13px}
 .opening-fields .field{gap:5px}
 .opening-fields .field>span{font-size:9px}
@@ -154,6 +156,7 @@ html[data-theme="dark"] .field input,html[data-theme="dark"] .field textarea,htm
 @media(max-width:900px){.model-check-grid{grid-template-columns:1fr}.assembly-result{min-height:unset}.coverage-summary{grid-template-columns:repeat(3,minmax(90px,1fr))}}
 @media(max-width:620px){.add-product-row{align-items:stretch;flex-direction:column}.coverage-summary{grid-template-columns:repeat(2,minmax(90px,1fr))}.modal-fields,.assertion-product-list{grid-template-columns:1fr}.field-wide{grid-column:auto}.catalog-actions .text-link{margin-left:0}.assembly-result-content{padding:18px}}
 @media(max-width:720px){.opening-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.opening-details>summary{align-items:flex-start;flex-direction:column;gap:4px}}
+@media(max-width:720px){.opening-example-button{margin-left:0}}
 .hardware-picker{margin:14px 0 16px}
 .hardware-picker-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .hardware-picker-heading>div{display:grid;gap:4px}
