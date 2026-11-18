@@ -2782,3 +2782,16 @@ html[data-theme="dark"] .hardware-picker-heading span {
     align-items: flex-start;
   }
 }
+
+.assembly-check-button {
+  margin-left: auto;
+}
+@media (max-width: 540px) {
+  .assembly-panel > .section-heading {
+    flex-wrap: wrap;
+  }
+  .assembly-check-button {
+    width: calc(100% - 45px);
+    margin-left: 45px;
+  }
+}

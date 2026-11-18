@@ -796,6 +796,29 @@ export default function ModelApp() {
                     <h2>Products in this opening</h2>
                     <p>Add the components you want to check together.</p>
                   </div>
+                  <button
+                    className="button button-primary assembly-check-button"
+                    disabled={
+                      checking ||
+                      (selectedIds.length < 2 &&
+                        !(
+                          selectedIds.length === 1 &&
+                          Object.values(opening).some(Boolean)
+                        ))
+                    }
+                    onClick={runCheck}
+                  >
+                    {checking ? (
+                      <RefreshCw className="spin" size={16} />
+                    ) : (
+                      <ClipboardCheck size={16} />
+                    )}
+                    {checking
+                      ? "Checking"
+                      : selectedIds.length < 2
+                        ? "Check opening"
+                        : "Check assembly"}
+                  </button>
                 </div>
                 <OpeningDetails
                   opening={opening}
@@ -821,29 +844,6 @@ export default function ModelApp() {
                     <CircleHelp size={14} />
                     Opening details are checked against selected products.
                   </span>
-                  <button
-                    className="button button-primary"
-                    disabled={
-                      checking ||
-                      (selectedIds.length < 2 &&
-                        !(
-                          selectedIds.length === 1 &&
-                          Object.values(opening).some(Boolean)
-                        ))
-                    }
-                    onClick={runCheck}
-                  >
-                    {checking ? (
-                      <RefreshCw className="spin" size={16} />
-                    ) : (
-                      <ClipboardCheck size={16} />
-                    )}
-                    {checking
-                      ? "Checking"
-                      : selectedIds.length < 2
-                        ? "Check opening"
-                        : "Check assembly"}
-                  </button>
                 </div>
               </div>
               <div className="result-panel assembly-result">
