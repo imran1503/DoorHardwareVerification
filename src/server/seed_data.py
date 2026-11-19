@@ -134,6 +134,57 @@ def seed_manufacturer_product_data(db):
             "INSERT OR IGNORE INTO products(category,manufacturer,model,name,specifications,source_title,source_url,evidence_status,notes) VALUES (?,?,?,?,?,?,?,?,?)",
             (category, "Camden Controls", model, name, json.dumps(specs), source_title, source_url, "manufacturer_document", notes),
         )
+
+    camden_power_products = [
+        (
+            "CX-PS13",
+            "CX-PS13 V3 Variable Output Linear Power Supply",
+            {
+                "record_scope": "exact_model",
+                "power_requirements": {
+                    "accepted_voltages": ["24VAC"],
+                    "documented_source_models": ["CX-TRX-4024"],
+                },
+                "input_voltage": "24VAC",
+                "power_output": {
+                    "voltage": "24VDC",
+                    "max_current_a": 0.8,
+                    "documented_models": ["CX-33", "CM-8536VR"],
+                },
+                "selectable_output_voltages": ["12VDC", "24VDC"],
+                "output_current_a": 0.8,
+                "requires_transformer": "CX-TRX-4024",
+            },
+            "CX-PS13 V3 Installation Instructions",
+            "https://www.camdencontrols.com/pipelines/resource/7935_CX_PS13V3_Manual_R1.pdf",
+            "Camden's CX-WC17SLVR instructions recommend the regulated CX-PS13 for the strike and CX-33. This modeled setup uses its 24VDC output; the CX-PS13 requires a matching AC transformer.",
+        ),
+        (
+            "CX-TRX-4024",
+            "CX-TRX-4024 40VA 24VAC Transformer",
+            {
+                "record_scope": "exact_model",
+                "mains_input_voltage": "120VAC",
+                "power_output": {
+                    "voltage": "24VAC",
+                    "output_va": 40,
+                    "max_current_a": round(40 / 24, 3),
+                    "documented_models": ["CX-PS13"],
+                },
+                "output_voltage": "24VAC",
+                "output_va": 40,
+            },
+            "CX-WC17SLVR Series Restroom Kit Installation Instructions",
+            "https://www.camdencontrols.com/pipelines/resource/1021_WC17SLVR_Restroom_Control_Manual_R2.pdf",
+            "Camden lists the CX-TRX-4024 as a required 40VA, 24VAC transformer for the CX-WC17SLVR and CX-WEC10K2 equipment package; it is the documented AC input source for the CX-PS13.",
+        ),
+    ]
+    for model, name, specs, source_title, source_url, notes in camden_power_products:
+        db.execute(
+            "INSERT INTO products(category,manufacturer,model,name,specifications,source_title,source_url,evidence_status,notes) VALUES ('power_supply','Camden Controls',?,?,?,?,?,'manufacturer_document',?) ON CONFLICT(category,manufacturer,model) DO UPDATE SET name=excluded.name,specifications=excluded.specifications,source_title=excluded.source_title,source_url=excluded.source_url,evidence_status='manufacturer_document',notes=excluded.notes,updated_at=CURRENT_TIMESTAMP",
+            (model, name, json.dumps(specs), source_title, source_url, notes),
+        )
+
     # Keep corrected source-scoped seed facts in sync on repeat initialization.
     for category, model, note in [
         ("washroom_control", "CX-WC17SLVR", "The kit manual lists its included surface contact but does not identify the exact contact model. Field operator and locking hardware must be selected separately."),
@@ -237,6 +288,67 @@ def seed_manufacturer_product_data(db):
         db.execute(
             "INSERT OR IGNORE INTO compatibility_assertions(product_ids,outcome,conditions,rationale,source_title,source_url,evidence_status) VALUES (?, 'compatible', '{}', ?, ?, ?, 'manufacturer_document')",
             (product_ids, rationale, "Camden restroom kit manuals", "https://www.camdencontrols.com/pipelines/resource/1007_WC16_PS_M1_Restroom_Control_Manual.pdf" if "CX-WC16-PS-M1" in {model_a, model_b} or "CX-WEC10-K2" in {model_a, model_b} else "https://www.camdencontrols.com/pipelines/resource/11374_WC17SLVR_Restroom_Control_Manual_R2.pdf"),
+        )
+
+    # Whole-kit and integrated-system assertions are stored as product tuples,
+    # not expanded into a claim that every possible pair proves the assembly.
+    camden_assembly_tuples = [
+        (
+            [
+                ("washroom_control", "CX-WC17SLVR"),
+                ("controller", "CX-33"),
+                ("activation_device", "CM-8536VR"),
+                ("activation_device", "CM-221"),
+            ],
+            "The CX-WC17SLVR manual documents this tuple as one kit: CX-33 logic relay, three CM-8536VR column switches, and built-in CM-221 hands-free switch. The model list stores CM-8536VR once; the documented quantity is three. Follow the selected mode and wiring diagram; this does not establish fit with an unlisted door, operator, or lock.",
+            "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions",
+            "https://www.camdencontrols.com/pipelines/resource/a131360_WC17SLVR_Restroom_Control_Manual_R2.pdf",
+        ),
+        (
+            [
+                ("washroom_control", "CX-WC16-PS-M1"),
+                ("controller", "CX-33"),
+                ("activation_device", "CM-331/42WS-SGLR"),
+                ("activation_device", "CM-325/42WS"),
+                ("activation_device", "CM-331/43S-SGLR"),
+                ("electric_strike", "CX-ED1799L-8"),
+            ],
+            "The CX-WC16-PS-M1 manual documents the CX-33-controlled restroom kit with the listed outside wave-to-open, inside wave-to-open, wave-to-lock switches, and CX-ED1799L-8 strike as one configured system. Confirm the selected mode, fail mode, exact wiring, and opening fit.",
+            "Camden CX-WC16-PS-M1 Series Restroom Kit Installation Instructions",
+            "https://www.camdencontrols.com/pipelines/resource/a2505_WC16_PS_M1_Restroom_Control_Manual.pdf",
+        ),
+        (
+            [
+                ("washroom_control", "CX-WC16-PS-M1"),
+                ("controller", "60-40E035"),
+                ("activation_device", "CM-331/42WS-SGLR"),
+                ("activation_device", "CM-325/42WS"),
+                ("activation_device", "CM-331/43S-SGLR"),
+                ("electric_strike", "CX-ED1799L-8"),
+                ("emergency_call", "CX-WEC10-K2"),
+                ("alarm", "CM-AF141SO"),
+                ("alarm", "CM-AF540SO"),
+            ],
+            "Camden's CX-WC16-PS-M1 wiring diagram documents this integrated restroom-control and emergency-call configuration, including the listed relay/power module, switches, strike, CX-WEC10-K2, and both annunciators. Apply the diagram's mode, output, and wiring requirements; this tuple does not establish compatibility with additional unlisted hardware.",
+            "Camden CX-WC16-PS-M1 Series Restroom Kit Installation Instructions — Emergency Call Integration",
+            "https://www.camdencontrols.com/pipelines/resource/a2505_WC16_PS_M1_Restroom_Control_Manual.pdf",
+        ),
+    ]
+    for models, rationale, source_title, source_url in camden_assembly_tuples:
+        product_ids = []
+        for category, model in models:
+            row = db.execute(
+                "SELECT id FROM products WHERE category=? AND manufacturer='Camden Controls' AND model=?",
+                (category, model),
+            ).fetchone()
+            if row:
+                product_ids.append(row["id"])
+        product_ids = sorted(set(product_ids))
+        if len(product_ids) != len(models) or len(product_ids) < 3:
+            continue
+        db.execute(
+            "INSERT OR IGNORE INTO compatibility_assertions(product_ids,outcome,conditions,rationale,source_title,source_url,evidence_status) VALUES (?,'compatible','{}',?,?,?,'manufacturer_document')",
+            (json.dumps(product_ids, separators=(",", ":")), rationale, source_title, source_url),
         )
 
     rule_seeds = [

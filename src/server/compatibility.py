@@ -514,19 +514,20 @@ def _finding_estimate(finding):
     elif finding.get("status") == "unverified":
         confidence = min(confidence, 25)
     elif finding.get("status") in {"compatible", "incompatible"} and product and trusted_product_record(product):
-        confidence = max(confidence, 70)
+        confidence = max(confidence, _evidence_confidence(product.get("evidence_status")))
     return {"compatibility_score": score, "confidence_score": confidence, "adjusted_score": round(50 + (score - 50) * confidence / 100, 1), "status": finding.get("status", "unverified")}
 
 
 def assembly_estimate(pair_estimates, extra_findings=(), assertion=None):
     factors = [item for item in pair_estimates if item.get("applicable")]
     factors.extend(_finding_estimate(item) for item in extra_findings)
-    if assertion:
-        confidence = _evidence_confidence(assertion.get("evidence_status"))
-        score = {"compatible": 100, "incompatible": 0, "conditional": 60}.get(assertion.get("outcome"), 50)
+    assertions = assertion if isinstance(assertion, (list, tuple)) else ([assertion] if assertion else [])
+    for assembly_assertion in assertions:
+        confidence = _evidence_confidence(assembly_assertion.get("evidence_status"))
+        score = {"compatible": 100, "incompatible": 0, "conditional": 60}.get(assembly_assertion.get("outcome"), 50)
         factors.append({"score": score, "compatibility_score": score, "confidence_score": confidence,
                         "adjusted_score": round(50 + (score - 50) * confidence / 100),
-                        "status": assertion.get("outcome"), "applicable": True})
+                        "status": assembly_assertion.get("outcome"), "applicable": True})
     if not factors:
         return {
             "score": None, "confidence": 0, "applicable_pairs": 0, "checks_in_average": 0,
@@ -561,7 +562,7 @@ def assembly_estimate(pair_estimates, extra_findings=(), assertion=None):
         "checks_in_average": len(factors),
         "verdict": verdict,
         "message": message,
-        "method": "Provisional model: pair estimates may use direct compatibility evidence, specification/interface matches, power-path signals, or weaker manufacturer and product-family signals. Confidence is a heuristic for evidence strength, not a calibrated probability. Pair scores are pulled toward neutral (50) by confidence, then averaged. For three or more products, a favorable average does not verify the full assembly without an exact assembly record. Strong documented conflicts override the average.",
+        "method": "Provisional model: the assembly estimate combines applicable selected-product interactions, matching multi-product tuple records, opening-fit checks, and shared-power findings. Results with weaker support are pulled toward neutral (50). A sourced tuple applies only to its listed products and conditions.",
     }
 
 

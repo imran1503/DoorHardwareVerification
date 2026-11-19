@@ -346,20 +346,36 @@ class Handler(BaseHTTPRequestHandler):
             )]
             if len(products) != len(product_ids):
                 return self.send_json({"error": "One or more selected products were not found."}, 404)
-            set_key = json.dumps(product_ids, separators=(",", ":"))
-            exact = db.execute("SELECT * FROM compatibility_assertions WHERE product_ids=? ORDER BY updated_at DESC LIMIT 1", (set_key,)).fetchone()
             context = data.get("context", {}) if isinstance(data.get("context", {}), dict) else {}
             context = {**opening, **context}
             findings = []
             pair_estimates = []
+            tuple_assertions = []
             exact_applies = False
-            if exact:
-                assertion = assertion_dict(exact)
-                conditions_match = all(context.get(key) == value for key, value in assertion["conditions"].items())
-                products_documented = all(trusted_product_record(product) for product in products)
-                if trusted_evidence(assertion["evidence_status"]) and conditions_match and products_documented:
+            selected_ids = set(product_ids)
+            products_by_id = {product["id"]: product for product in products}
+            for row in db.execute("SELECT * FROM compatibility_assertions ORDER BY updated_at DESC"):
+                candidate = assertion_dict(row)
+                candidate_ids = set(candidate["product_ids"])
+                if len(candidate_ids) < 3 or not candidate_ids.issubset(selected_ids):
+                    continue
+                tuple_products = [products_by_id[product_id] for product_id in candidate_ids]
+                conditions_match = all(context.get(key) == value for key, value in candidate["conditions"].items())
+                products_documented = all(trusted_product_record(product) for product in tuple_products)
+                if not trusted_evidence(candidate["evidence_status"]) or not conditions_match or not products_documented:
+                    continue
+                tuple_assertions.append(candidate)
+                findings.append({
+                    "status": candidate["outcome"],
+                    "finding_type": "assembly_tuple",
+                    "rationale": candidate["rationale"],
+                    "source_title": candidate["source_title"],
+                    "source_url": candidate["source_url"],
+                    "product_ids": candidate["product_ids"],
+                })
+                if candidate_ids == selected_ids and not exact_applies:
                     exact_applies = True
-                    findings.append({"status": assertion["outcome"], "rationale": assertion["rationale"], "source_title": assertion["source_title"], "source_url": assertion["source_url"]})
+                    assertion = candidate
             if not exact_applies:
                 for left_index, product_a in enumerate(products):
                     for product_b in products[left_index + 1:]:
@@ -374,12 +390,6 @@ class Handler(BaseHTTPRequestHandler):
                 findings.append({"status": "unverified", "product_a": products[0], "rationale": "No opening-fit constraint is documented for this selected product category."})
             if not all(trusted_evidence(product["evidence_status"]) for product in products):
                 findings.append({"status": "unverified", "rationale": "At least one selected product is still a research lead; verify its exact model and specifications from a primary source."})
-            if len(products) > 2:
-                findings.append({
-                    "status": "unverified",
-                    "finding_type": "assembly_level",
-                    "rationale": "No complete-assembly record covers this exact selected product set. Pair checks and shared-power checks are useful component checks, but do not prove the full wiring, control sequence, and combined operation. Add documentation or a field-test record for this exact assembly.",
-                })
             statuses = [finding["status"] for finding in findings]
             status = "incompatible" if "incompatible" in statuses else "conditional" if "conditional" in statuses else "compatible" if statuses and all(value == "compatible" for value in statuses) else "unverified"
             messages = {
@@ -391,14 +401,9 @@ class Handler(BaseHTTPRequestHandler):
             assembly_level_findings = [
                 finding for finding in findings
                 if (finding.get("product_a") and not finding.get("product_b"))
-                or finding.get("finding_type") in {"power_path", "assembly_level"}
+                or finding.get("finding_type") == "power_path"
             ]
-            estimate = assembly_estimate(pair_estimates, assembly_level_findings, assertion if exact_applies else None)
-            if len(products) > 2 and not exact_applies and estimate.get("score") is not None and estimate.get("verdict") != "incompatible":
-                # A favorable average of pair results must never read as proof
-                # that a multi-device system works as one complete assembly.
-                estimate["verdict"] = "unverified"
-                estimate["message"] = "Pair and component checks are only partial evidence. Verify the exact complete assembly with manufacturer documentation or a field test."
+            estimate = assembly_estimate(pair_estimates, assembly_level_findings, tuple_assertions)
             if estimate.get("score") is not None:
                 status = estimate["verdict"]
             return self.send_json({"status": status, "message": estimate["message"] if estimate.get("score") is not None else messages[status], "estimate": estimate, "assertion": assertion if exact_applies else None, "products": products, "findings": findings})

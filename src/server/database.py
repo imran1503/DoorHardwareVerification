@@ -81,7 +81,7 @@ def trusted_product_record(product):
 
 def normalized_ids(raw_ids):
     try:
-        ids = sorted({int(value) for value in raw_ids})
+        ids = sorted({int(value) for value in raw_ids if value is not None and value != "" and str(value).casefold() != "null"})
     except (TypeError, ValueError):
         return []
     return ids

@@ -74,15 +74,108 @@ const emptyOpening = {
 };
 const exampleScenarios = [
   {
-    id: "wc16-strike",
-    title: "Restroom kit + electric strike",
+    id: "wc17-four-device-tuple",
+    title: "Four-model restroom kit assembly",
     description:
-      "Manufacturer-documented CX-WC16-PS-M1 and CX-ED1799L-8 pairing.",
+      "Checks the four-model CX-WC17SLVR tuple with Camden's specified CX-PS13 supply and CX-TRX-4024 transformer.",
     expected: "Documented compatible",
     kind: "compatible",
     products: [
+      ["washroom_control", "Camden Controls", "CX-WC17SLVR"],
+      ["controller", "Camden Controls", "CX-33"],
+      ["activation_device", "Camden Controls", "CM-8536VR"],
+      ["activation_device", "Camden Controls", "CM-221"],
+      ["power_supply", "Camden Controls", "CX-PS13"],
+      ["power_supply", "Camden Controls", "CX-TRX-4024"],
+    ],
+  },
+  {
+    id: "wc16-six-device-tuple",
+    title: "Six-model restroom kit assembly",
+    description:
+      "Tests the documented CX-WC16-PS-M1 setup with CX-33, strike, and three activation devices.",
+    expected: "Documented compatible tuple",
+    kind: "compatible",
+    products: [
       ["washroom_control", "Camden Controls", "CX-WC16-PS-M1"],
+      ["controller", "Camden Controls", "CX-33"],
       ["electric_strike", "Camden Controls", "CX-ED1799L-8"],
+      ["activation_device", "Camden Controls", "CM-331/42WS-SGLR"],
+      ["activation_device", "Camden Controls", "CM-325/42WS"],
+      ["activation_device", "Camden Controls", "CM-331/43S-SGLR"],
+    ],
+  },
+  {
+    id: "wc16-nine-device-emergency-tuple",
+    title: "Nine-model restroom + emergency call assembly",
+    description:
+      "Tests the documented CX-WC16-PS-M1 emergency-call configuration with its relay, strike, switches, call system, and annunciators.",
+    expected: "Documented compatible tuple",
+    kind: "compatible",
+    products: [
+      ["washroom_control", "Camden Controls", "CX-WC16-PS-M1"],
+      ["controller", "Camden Controls", "60-40E035"],
+      ["emergency_call", "Camden Controls", "CX-WEC10-K2"],
+      ["alarm", "Camden Controls", "CM-AF141SO"],
+      ["alarm", "Camden Controls", "CM-AF540SO"],
+      ["electric_strike", "Camden Controls", "CX-ED1799L-8"],
+      ["activation_device", "Camden Controls", "CM-331/42WS-SGLR"],
+      ["activation_device", "Camden Controls", "CM-325/42WS"],
+      ["activation_device", "Camden Controls", "CM-331/43S-SGLR"],
+    ],
+  },
+  {
+    id: "wc17-operator-extension",
+    title: "Five-model restroom kit + operator",
+    description:
+      "The documented CX-WC17SLVR tuple with its specified power chain, plus an LCN 9540 operator. The added operator interaction is not established by the kit manual.",
+    expected: "Test only · added interaction unverified",
+    kind: "unverified",
+    products: [
+      ["washroom_control", "Camden Controls", "CX-WC17SLVR"],
+      ["controller", "Camden Controls", "CX-33"],
+      ["activation_device", "Camden Controls", "CM-8536VR"],
+      ["activation_device", "Camden Controls", "CM-221"],
+      ["power_supply", "Camden Controls", "CX-PS13"],
+      ["power_supply", "Camden Controls", "CX-TRX-4024"],
+      ["automatic_operator", "LCN", "9540"],
+    ],
+  },
+  {
+    id: "wc16-operator-extension",
+    title: "Seven-model restroom kit + operator",
+    description:
+      "A documented six-model CX-WC16-PS-M1 tuple plus an LCN 9540 operator to show how an unverified extra component affects the estimate.",
+    expected: "Test only · added interaction unverified",
+    kind: "unverified",
+    products: [
+      ["washroom_control", "Camden Controls", "CX-WC16-PS-M1"],
+      ["controller", "Camden Controls", "CX-33"],
+      ["electric_strike", "Camden Controls", "CX-ED1799L-8"],
+      ["activation_device", "Camden Controls", "CM-331/42WS-SGLR"],
+      ["activation_device", "Camden Controls", "CM-325/42WS"],
+      ["activation_device", "Camden Controls", "CM-331/43S-SGLR"],
+      ["automatic_operator", "LCN", "9540"],
+    ],
+  },
+  {
+    id: "wc16-contact-extension",
+    title: "Ten-model emergency-call system + door contact",
+    description:
+      "A documented nine-model restroom and emergency-call tuple plus a CX-MDA contact. The extra contact is a test-only, unverified addition.",
+    expected: "Test only · added interaction unverified",
+    kind: "unverified",
+    products: [
+      ["washroom_control", "Camden Controls", "CX-WC16-PS-M1"],
+      ["controller", "Camden Controls", "60-40E035"],
+      ["emergency_call", "Camden Controls", "CX-WEC10-K2"],
+      ["alarm", "Camden Controls", "CM-AF141SO"],
+      ["alarm", "Camden Controls", "CM-AF540SO"],
+      ["electric_strike", "Camden Controls", "CX-ED1799L-8"],
+      ["activation_device", "Camden Controls", "CM-331/42WS-SGLR"],
+      ["activation_device", "Camden Controls", "CM-325/42WS"],
+      ["activation_device", "Camden Controls", "CM-331/43S-SGLR"],
+      ["door_contact", "Camden Controls", "CX-MDA"],
     ],
   },
   {
@@ -257,12 +350,13 @@ export default function ModelApp() {
   const [showRule, setShowRule] = useState(false);
   const [showAssertion, setShowAssertion] = useState(false);
   const [showExamples, setShowExamples] = useState(false);
+  const [exampleEstimates, setExampleEstimates] = useState({});
   const [selectedIds, setSelectedIds] = useState([]);
   const [opening, setOpening] = useState(emptyOpening);
   const [openingPreview, setOpeningPreview] = useState(null);
   const [checkResult, setCheckResult] = useState(null);
   const [reportExpanded, setReportExpanded] = useState(false);
-  const [reportPanelVisible, setReportPanelVisible] = useState(true);
+  const [reportPanelVisible, setReportPanelVisible] = useState(false);
   const reportDialogRef = useRef(null);
   const reportTriggerRef = useRef(null);
   const reportWasExpanded = useRef(false);
@@ -408,6 +502,60 @@ export default function ModelApp() {
     [opening],
   );
   const hasOpeningDetails = Object.keys(openingContext).length > 0;
+
+  useEffect(() => {
+    if (!showExamples || !data?.products) return undefined;
+
+    let current = true;
+    const scenarios = exampleScenarios.map((scenario) => {
+      const products = scenario.products.map(([category, manufacturer, model]) =>
+        activeProducts.find(
+          (product) =>
+            product.category === category &&
+            product.manufacturer === manufacturer &&
+            product.model === model,
+        ),
+      );
+      return { scenario, products };
+    });
+
+    setExampleEstimates(
+      Object.fromEntries(scenarios.map(({ scenario }) => [scenario.id, { loading: true }])),
+    );
+
+    Promise.all(
+      scenarios.map(async ({ scenario, products }) => {
+        if (products.some((product) => !product))
+          return [scenario.id, { error: "Products unavailable" }];
+        const openingDetails = Object.fromEntries(
+          Object.entries(scenario.opening || {}).map(([key, value]) => [
+            key,
+            ["width_in", "height_in", "weight_lb", "reveal_depth_mm"].includes(key)
+              ? Number(value)
+              : value,
+          ]),
+        );
+        try {
+          const result = await api("/api/compatibility/check", {
+            method: "POST",
+            body: JSON.stringify({
+              product_ids: products.map((product) => product.id),
+              ...(Object.keys(openingDetails).length && { opening: openingDetails }),
+            }),
+          });
+          return [scenario.id, { estimate: result.estimate }];
+        } catch (error) {
+          return [scenario.id, { error: error.message }];
+        }
+      }),
+    ).then((entries) => {
+      if (current) setExampleEstimates(Object.fromEntries(entries));
+    });
+
+    return () => {
+      current = false;
+    };
+  }, [showExamples, data?.products]);
 
   useEffect(() => {
     if (!hasOpeningDetails) {
@@ -1004,12 +1152,7 @@ export default function ModelApp() {
                 <section className="assembly-report-section">
                   {!checkResult ? (
                     <div className="empty-report">
-                      <div className="result-kicker">ASSEMBLY REPORT</div>
-                      <h3>Ready when you are</h3>
-                      <p>
-                        Add two products for pair checks, or select one product
-                        and enter opening details to check fit.
-                      </p>
+                      <h2 className="assembly-report-heading">Assembly report</h2>
                       <div className="rule-stat">
                         <span className="stat-icon">
                           <ShieldCheck size={17} />
@@ -1035,10 +1178,10 @@ export default function ModelApp() {
             <div className="footnote">
               <ShieldCheck size={15} />
               <span>
-                Pair and power checks show individual interactions and shared
-                loads. For three or more products, the full set stays
-                unverified until an assembly-level record or field test covers
-                that exact combination.
+                The assembly score combines all applicable interactions among
+                selected products with opening-fit and shared-power checks.
+                Verify the complete wiring and operating sequence against
+                manufacturer documentation.
               </span>
             </div>
             {reportExpanded && checkResult && (
@@ -1053,8 +1196,8 @@ export default function ModelApp() {
                 >
                   <header className="assembly-report-dialog-header">
                     <div>
-                      <div className="result-kicker">ASSEMBLY REPORT</div>
-                      <h2 id="assembly-report-title">Compatibility review</h2>
+                      <h2 id="assembly-report-title" className="assembly-report-title">Assembly report</h2>
+                      <p className="assembly-report-subtitle">Compatibility review</p>
                     </div>
                     <button
                       className="button button-quiet"
@@ -1075,6 +1218,7 @@ export default function ModelApp() {
                     </div>
                     <CheckResult
                       result={checkResult}
+                      expanded
                       onCoverage={() => {
                         setReportExpanded(false);
                         setPage("coverage");
@@ -1220,6 +1364,8 @@ export default function ModelApp() {
                       product.model === model,
                   ),
               );
+              const preview = exampleEstimates[scenario.id];
+              const estimate = preview?.estimate;
               return (
                 <article className="example-card" key={scenario.id}>
                   <div className="example-card-copy">
@@ -1232,6 +1378,23 @@ export default function ModelApp() {
                       </span>
                     </div>
                     <p>{scenario.description}</p>
+                    <div className="example-estimate" aria-live="polite">
+                      {preview?.loading ? (
+                        <span>Calculating assessment and confidence…</span>
+                      ) : estimate?.score != null ? (
+                        <>
+                          <strong>Assembly score: {estimate.score}%</strong>
+                          <span>Confidence in assessment: {estimate.confidence}%</span>
+                          {estimate.checks_in_average != null && (
+                            <span>{estimate.checks_in_average} checks averaged</span>
+                          )}
+                        </>
+                      ) : preview?.error ? (
+                        <span>Estimate unavailable: {preview.error}</span>
+                      ) : (
+                        <span>Assessment confidence unavailable.</span>
+                      )}
+                    </div>
                   </div>
                   <button
                     className="button button-quiet"
@@ -2138,8 +2301,9 @@ function CoveragePage({ coverage, categories, onRefresh, onAssert }) {
           <h1>Compatibility coverage</h1>
           <p>
             Pair estimates use recorded compatibility, specification matches,
-            and cautious manufacturer or product-family signals. Confidence is
-            evidence strength, not a probability that the combination will work.
+            and cautious manufacturer or product-family signals. Confidence
+            shows how strongly the available evidence supports the assessment;
+            it is not a probability that the combination will work.
           </p>
         </div>
         <button className="button button-quiet" onClick={() => onRefresh({ page, status: filter, query })}>
@@ -2152,7 +2316,7 @@ function CoveragePage({ coverage, categories, onRefresh, onAssert }) {
           ["total", "ALL PRODUCT PAIRS"],
           ["applicable", "INTERACTING PAIRS"],
           ["average_compatibility_score", "AVG. ADJUSTED SCORE"],
-          ["average_confidence", "AVG. CONFIDENCE"],
+          ["average_confidence", "AVG. CONFIDENCE IN ASSESSMENT"],
           ["compatible", "SOURCED COMPATIBLE"],
           ["incompatible", "SOURCED CONFLICTS"],
           ["conditional", "CONDITIONAL"],
@@ -2222,7 +2386,7 @@ function CoveragePage({ coverage, categories, onRefresh, onAssert }) {
                 <th>Component A</th>
                 <th>Component B</th>
                 <th>Result</th>
-                <th>Score / confidence</th>
+                <th>Assessment / confidence</th>
                 <th>Evidence / finding</th>
                 <th></th>
               </tr>
@@ -2244,7 +2408,7 @@ function CoveragePage({ coverage, categories, onRefresh, onAssert }) {
                   </td>
                   <td>
                     {row.adjusted_score == null ? "—" : `${row.adjusted_score}%`}
-                    <small>{row.confidence_score == null ? "Excluded from average" : `${row.confidence_score}% confidence`}</small>
+                    <small>{row.confidence_score == null ? "Excluded from average" : `${row.confidence_score}% confidence in assessment`}</small>
                   </td>
                   <td>
                     <span>
@@ -2559,7 +2723,83 @@ function ResearchPage({
   );
 }
 
-function CheckResult({ result, onCoverage }) {
+function CheckResult({ result, onCoverage, expanded = false }) {
+  const assessmentRef = useRef(null);
+  const [assessmentJumpVisible, setAssessmentJumpVisible] = useState(true);
+  const findings = result.findings || [];
+  const conflictFindings = findings.filter(
+    (finding) => finding.status === "incompatible",
+  );
+  const failingFindings = findings
+    .filter((finding) => ["conditional", "unverified"].includes(finding.status))
+    .sort((left, right) => {
+      const priority = { conditional: 0, unverified: 1 };
+      return priority[left.status] - priority[right.status];
+    });
+  const workingFindings = findings.filter((finding) => finding.status === "compatible");
+  const needsAssessmentShortcut =
+    expanded && result.estimate?.score != null &&
+    conflictFindings.length + failingFindings.length >= 5;
+  useEffect(() => {
+    if (!needsAssessmentShortcut) {
+      setAssessmentJumpVisible(true);
+      return undefined;
+    }
+
+    const assessment = assessmentRef.current;
+    const scroller = assessment?.closest(".assembly-report-dialog-body");
+    if (!assessment || !scroller) return undefined;
+
+    const updateVisibility = () => {
+      const assessmentTop =
+        assessment.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top +
+        scroller.scrollTop;
+      const restingPosition = scroller.clientHeight * 0.72;
+      setAssessmentJumpVisible(scroller.scrollTop < assessmentTop - restingPosition);
+    };
+
+    updateVisibility();
+    scroller.addEventListener("scroll", updateVisibility, { passive: true });
+    window.addEventListener("resize", updateVisibility);
+    return () => {
+      scroller.removeEventListener("scroll", updateVisibility);
+      window.removeEventListener("resize", updateVisibility);
+    };
+  }, [needsAssessmentShortcut]);
+  const scrollToAssessment = () =>
+    assessmentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const renderFindingCard = (finding, index) => (
+    <div
+      className="finding-card"
+      key={`${finding.finding_type || finding.status}-${finding.product_a?.id || "assembly"}-${finding.product_b?.id || index}`}
+    >
+      <div className="finding-title">
+        <StatusPill status={finding.status} />
+        {finding.product_a && (
+          <b>
+            {displayName(finding.product_a)}
+            {finding.product_b
+              ? ` + ${displayName(finding.product_b)}`
+              : finding.finding_type === "power_path"
+                ? " · power path"
+                : " · opening fit"}
+          </b>
+        )}
+      </div>
+      <p>{finding.rationale}</p>
+      {finding.source_url && (
+        <a
+          className="source-link"
+          href={finding.source_url}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {finding.source_title || "Evidence source"} <ArrowUpRight size={12} />
+        </a>
+      )}
+    </div>
+  );
   const labels = {
     compatible: "Compatible",
     incompatible: "Incompatible",
@@ -2570,23 +2810,72 @@ function CheckResult({ result, onCoverage }) {
   };
   return (
     <div className={`assembly-result-content status-${result.status}`}>
-      <div className="result-symbol">
-        {result.status === "compatible" ? (
-          <Check size={24} />
-        ) : result.status === "incompatible" ? (
-          <X size={24} />
-        ) : (
-          <CircleHelp size={24} />
-        )}
-      </div>
-      <div className="result-kicker">ASSEMBLY REPORT</div>
+      <h2 className="assembly-result-heading">Assembly report</h2>
       <h3>{labels[result.status] || "Not yet verified"}</h3>
-      <p>{result.message || result.assertion?.rationale}</p>
+      {conflictFindings.length > 0 && (
+        <section className="conflict-reasons" aria-labelledby="conflict-reasons-title">
+          <h4 id="conflict-reasons-title">Why it doesn’t work</h4>
+          {conflictFindings.map((finding, index) => {
+            const products = finding.product_ids
+              ?.map((id) => result.products?.find((product) => product.id === id))
+              .filter(Boolean);
+            const title = finding.product_a
+              ? `${displayName(finding.product_a)}${finding.product_b ? ` + ${displayName(finding.product_b)}` : ""}`
+              : products?.length
+                ? products.map(displayName).join(" + ")
+                : finding.finding_type === "power_path"
+                  ? "Power path"
+                  : "Assembly conflict";
+            return (
+              <div className="conflict-reason" key={`conflict-${index}`}>
+                <strong>{title}</strong>
+                <p>{finding.rationale}</p>
+                {finding.source_url && (
+                  <a className="source-link" href={finding.source_url} target="_blank" rel="noreferrer">
+                    {finding.source_title || "Evidence source"} <ArrowUpRight size={12} />
+                  </a>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      )}
+      {result.status === "incompatible" && (
+        <div className="conflict-override-note" role="note">
+          A well-supported documented conflict overrides the average score, even if other checks are favorable.
+        </div>
+      )}
+      {findings.length === 0 && (
+        <p>{result.message || result.assertion?.rationale}</p>
+      )}
+      {failingFindings.length > 0 && (
+        <section className="report-findings">
+          <h4>{conflictFindings.length ? "Other items to resolve" : "What’s failing or needs attention"}</h4>
+          {failingFindings.map((finding, index) => (
+            <React.Fragment key={`finding-with-jump-${finding.product_a?.id || "item"}-${finding.product_b?.id || index}`}>
+              {renderFindingCard(finding, index)}
+              {needsAssessmentShortcut && index === Math.min(3, failingFindings.length - 1) && (
+                <button
+                    className={`assessment-jump assessment-jump-secondary${assessmentJumpVisible ? " is-visible" : " is-hidden"}`}
+                  type="button"
+                  onClick={scrollToAssessment}
+                  aria-label="Scroll to assembly assessment"
+                >
+                  <ChevronDown size={24} aria-hidden="true" />
+                </button>
+              )}
+            </React.Fragment>
+          ))}
+        </section>
+      )}
       {result.estimate?.score != null && (
-        <div className="assembly-estimate">
+        <div className="assembly-estimate" ref={assessmentRef}>
           <div className="assembly-estimate-head">
-            <div><small>CONFIDENCE-ADJUSTED ASSEMBLY SCORE</small><strong>{result.estimate.score}%</strong></div>
-            <div><small>EVIDENCE CONFIDENCE</small><strong>{result.estimate.confidence}%</strong></div>
+            <div><small className="estimate-title">Assembly assessment</small><strong>{result.estimate.score}%</strong></div>
+            <div>
+              <small>CONFIDENCE IN ASSESSMENT</small>
+              <strong>{result.estimate.confidence}%</strong>
+            </div>
           </div>
           <div className="estimate-meter" aria-label={`Compatibility estimate ${result.estimate.score} percent`}>
             <span style={{ width: `${result.estimate.score}%` }} />
@@ -2598,38 +2887,12 @@ function CheckResult({ result, onCoverage }) {
           <small>{result.estimate.method}</small>
         </div>
       )}
-      {result.findings?.map((finding, index) => (
-        <div
-          className="finding-card"
-          key={`${finding.product_a?.id || "assembly"}-${finding.product_b?.id || index}`}
-        >
-          <div className="finding-title">
-            <StatusPill status={finding.status} />
-            {finding.product_a && (
-              <b>
-                {displayName(finding.product_a)}
-                {finding.product_b
-                  ? ` + ${displayName(finding.product_b)}`
-                  : finding.finding_type === "power_path"
-                    ? " · power path"
-                    : " · opening fit"}
-              </b>
-            )}
-          </div>
-          <p>{finding.rationale}</p>
-          {finding.source_url && (
-            <a
-              className="source-link"
-              href={finding.source_url}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {finding.source_title || "Evidence source"}{" "}
-              <ArrowUpRight size={12} />
-            </a>
-          )}
-        </div>
-      ))}
+      {workingFindings.length > 0 && (
+        <section className="report-findings report-working-findings">
+          <h4>Why it works</h4>
+          {workingFindings.map(renderFindingCard)}
+        </section>
+      )}
       <button className="text-link" onClick={onCoverage}>
         Open coverage view <ArrowUpRight size={14} />
       </button>

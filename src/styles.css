@@ -1881,13 +1881,16 @@ html[data-theme="dark"] .research-card .research-components {
   background: inherit;
 }
 .assembly-report-dialog-header h2 {
-  margin: 5px 0 0;
-  font: 600 21px var(--heading-font), sans-serif;
+  margin: 0;
+  font: 600 24px var(--heading-font), sans-serif;
 }
-.assembly-report-dialog-header .result-kicker {
+.assembly-report-dialog-header .assembly-report-subtitle {
+  margin: 3px 0 0;
   color: #77837d;
-  font: 11px var(--mono);
-  letter-spacing: 1px;
+  font-size: 13px;
+}
+.assembly-report-dialog .assembly-result-heading {
+  display: none;
 }
 .assembly-report-dialog-body {
   overflow-y: auto;
@@ -1915,7 +1918,7 @@ html[data-theme="dark"] .research-card .research-components {
   font-size: 13px;
 }
 .assembly-report-dialog .assembly-result-content {
-  gap: 16px;
+  gap: 12px;
 }
 .assembly-report-dialog .assembly-result-content h3 {
   font-size: 28px;
@@ -1932,6 +1935,9 @@ html[data-theme="dark"] .research-card .research-components {
 .assembly-report-dialog .assembly-estimate-head small,
 .assembly-report-dialog .assembly-estimate > small {
   font-size: 12px;
+}
+.assembly-report-dialog .assembly-estimate-head .estimate-title {
+  font-size: 20px;
 }
 .assembly-report-dialog .assembly-estimate-head strong {
   font-size: 30px;
@@ -2065,9 +2071,6 @@ html[data-theme="dark"] .research-card .research-components {
   align-items: flex-start;
   gap: 10px;
 }
-.assembly-result .assembly-result-content .result-symbol {
-  margin: 0 0 5px;
-}
 .empty-report {
   width: 100%;
   display: flex;
@@ -2107,6 +2110,11 @@ html[data-theme="dark"] .research-card .research-components {
   margin: 0;
   color: #24332c;
 }
+.assembly-result-heading {
+  margin: 0;
+  color: #24332c;
+  font: 600 20px var(--heading-font), sans-serif;
+}
 .assembly-result-content > p {
   font-size: 11px;
   line-height: 1.6;
@@ -2115,6 +2123,54 @@ html[data-theme="dark"] .research-card .research-components {
 }
 .assembly-result-content .result-kicker {
   margin-top: 4px;
+}
+.conflict-reasons {
+  margin: 10px 0 8px;
+  padding: 12px 13px;
+  border: 1px solid #ead2ce;
+  border-left: 3px solid #bd6a5e;
+  border-radius: 6px;
+  background: #fcf8f7;
+}
+.conflict-reasons h4 {
+  margin: 0 0 9px;
+  color: #78443d;
+  font-size: 13px;
+}
+.conflict-reason + .conflict-reason {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eadfdd;
+}
+.conflict-reason > strong {
+  color: #4f4543;
+  font-size: 11px;
+}
+.conflict-reason p {
+  margin: 5px 0;
+  color: #685e5b;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.conflict-override-note {
+  margin: 0 0 11px;
+  padding: 9px 12px;
+  border: 1px solid #e7d9b9;
+  border-radius: 5px;
+  background: #faf6eb;
+  color: #78653c;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.report-findings {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+}
+.report-findings h4 {
+  margin: 0;
+  color: #4d5d55;
+  font-size: 13px;
 }
 .finding-card {
   width: 100%;
@@ -2369,6 +2425,67 @@ html[data-theme="dark"] .research-card .research-components {
   gap: 14px;
 }
 .assembly-estimate-head > div { display: grid; gap: 4px; }
+.assembly-estimate-head .estimate-title {
+  color: #4e5f56;
+  font: 600 19px var(--heading-font), sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.assessment-jump {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  align-items: center;
+  justify-items: center;
+  padding: 0;
+  border: 1px solid #518f73;
+  border-radius: 50%;
+  background: #203a30;
+  color: #f2fff8;
+  box-shadow: 0 4px 14px #0005, 0 0 0 5px #6fae8522;
+  cursor: pointer;
+  transition: transform .18s ease, background .18s ease, box-shadow .18s ease;
+  flex: 0 0 auto;
+}
+.assessment-jump:hover {
+  transform: translateY(2px);
+  background: #2d4d40;
+  box-shadow: 0 6px 18px #0006, 0 0 0 6px #6fae8530;
+}
+.assessment-jump svg {
+  animation: assessment-arrow-bob 1.1s ease-in-out infinite;
+}
+.assessment-jump-secondary {
+  position: sticky;
+  z-index: 5;
+  top: calc(72vh - 28px);
+  align-self: start;
+  justify-self: center;
+  margin-top: -56px;
+  margin-bottom: -56px;
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition: opacity .24s ease, transform .24s ease, visibility 0s;
+}
+.assessment-jump-secondary.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(9px);
+  transition: opacity .24s ease, transform .24s ease, visibility 0s linear .24s;
+}
+@keyframes assessment-arrow-bob {
+  0%, 100% { transform: translateY(-2px); }
+  50% { transform: translateY(4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .assessment-jump svg { animation: none; }
+  .assessment-jump-secondary { transition: none; }
+}
+@media (max-width: 640px) {
+  .assessment-jump { width: 50px; height: 50px; }
+}
 .assembly-estimate-head small,
 .assembly-estimate > small {
   color: #788583;
@@ -2582,6 +2699,29 @@ html[data-theme="dark"] .assembly-estimate {
   background: #242424;
   border-color: #3a3a3a;
 }
+html[data-theme="dark"] .conflict-reasons {
+  background: #292322;
+  border-color: #493331;
+  border-left-color: #b96b60;
+}
+html[data-theme="dark"] .conflict-reasons h4 {
+  color: #e3b1aa;
+}
+html[data-theme="dark"] .conflict-reason + .conflict-reason {
+  border-top-color: #493331;
+}
+html[data-theme="dark"] .conflict-reason > strong,
+html[data-theme="dark"] .conflict-reason p {
+  color: #d2c5c2;
+}
+html[data-theme="dark"] .conflict-override-note {
+  background: #2c291f;
+  border-color: #4a402d;
+  color: #d5c28f;
+}
+html[data-theme="dark"] .report-findings h4 {
+  color: #d6dfda;
+}
 html[data-theme="dark"] .assembly-estimate-head strong {
   color: #d4e4dc;
 }
@@ -2681,6 +2821,19 @@ html[data-theme="dark"] .assertion-product-list label {
   font-size: 10px;
   line-height: 1.45;
 }
+.example-estimate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 14px;
+  margin-top: 8px;
+  color: #68746f;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.example-estimate strong {
+  color: #23785e;
+  font-weight: 700;
+}
 .example-badge {
   display: inline-flex;
   padding: 4px 7px;
@@ -2715,6 +2868,12 @@ html[data-theme="dark"] .example-card h3 {
 }
 html[data-theme="dark"] .example-card p {
   color: #aaa;
+}
+html[data-theme="dark"] .example-estimate {
+  color: #b0b0b0;
+}
+html[data-theme="dark"] .example-estimate strong {
+  color: #7bd0b0;
 }
 html[data-theme="dark"] .example-badge {
   background: #25362b;
@@ -2795,11 +2954,15 @@ html[data-theme="dark"] .assembly-result-content {
 html[data-theme="dark"] .assembly-result-content h3 {
   color: #ededed;
 }
+html[data-theme="dark"] .assembly-result-heading {
+  color: #ededed;
+}
 html[data-theme="dark"] .assembly-result-content .result-kicker {
   color: #aaa;
 }
 html[data-theme="dark"] .selected-products-heading h2,
-html[data-theme="dark"] .empty-report h3 {
+html[data-theme="dark"] .empty-report h3,
+html[data-theme="dark"] .empty-report .assembly-report-heading {
   color: #ededed;
 }
 html[data-theme="dark"] .selected-products-heading p,
@@ -2820,8 +2983,11 @@ html[data-theme="dark"] .assembly-report-dialog-header {
 html[data-theme="dark"] .assembly-report-dialog-header h2 {
   color: #ededed;
 }
-html[data-theme="dark"] .assembly-report-dialog-header .result-kicker {
+html[data-theme="dark"] .assembly-report-dialog-header .assembly-report-subtitle {
   color: #aaa;
+}
+html[data-theme="dark"] .assembly-estimate-head .estimate-title {
+  color: #e4e9e6;
 }
 html[data-theme="dark"] .report-products-summary {
   background: #242424;
@@ -3060,11 +3226,11 @@ html[data-theme="dark"] .select-wrap select {
   gap: 4px;
 }
 .hardware-picker-heading b {
-  font-size: 10px;
+  font-size: 20px;
   color: #56635e;
 }
 .hardware-picker-heading span {
-  font-size: 9px;
+  font-size: 16px;
   color: #89948f;
 }
 .hardware-picker-heading .text-link {
@@ -3082,12 +3248,12 @@ html[data-theme="dark"] .select-wrap select {
   gap: 5px;
 }
 .hardware-picker-grid .field > span {
-  font-size: 9px;
+  font-size: 16px;
 }
 .hardware-picker-grid .select-wrap select {
-  height: 33px;
-  font-size: 10px;
-  padding-left: 8px;
+  height: 32px;
+  font-size: 17px;
+  padding-left: 10px;
 }
 html[data-theme="dark"] .hardware-picker-heading b {
   color: #ddd;
@@ -3120,4 +3286,37 @@ html[data-theme="dark"] .hardware-picker-heading span {
     width: calc(100% - 45px);
     margin-left: 45px;
   }
+}
+
+/* Keep the report sidebar readable at the same scale as the workspace form. */
+.assembly-result .selected-products-heading h2,
+.assembly-result .empty-report h3 {
+  font-size: 20px;
+}
+.assembly-result .selected-products-heading p,
+.assembly-result .empty-report > p,
+.assembly-result-content > p,
+.assembly-result .empty-selection {
+  font-size: 16px;
+}
+.assembly-result .assembly-product b {
+  font-size: 16px;
+}
+.assembly-result .assembly-product > div > span {
+  font-size: 14px;
+}
+.assembly-result .finding-title b,
+.assembly-result .finding-card p {
+  font-size: 15px;
+}
+.assembly-result .empty-report .assembly-report-heading {
+  margin: 0;
+  color: #24332c;
+  font: 600 20px var(--heading-font), sans-serif;
+}
+.assembly-result .rule-stat b {
+  font-size: 16px;
+}
+.assembly-result .rule-stat small {
+  font-size: 13px;
 }
