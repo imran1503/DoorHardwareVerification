@@ -264,6 +264,11 @@ button {
   color: #7d8985;
   margin: 7px 0 0;
 }
+.product-search-button {
+  gap: 5px;
+  margin-right: 4px;
+  color: #3f6e59;
+}
 .button {
   border: 1px solid transparent;
   display: inline-flex;
@@ -2026,6 +2031,11 @@ html[data-theme="dark"] .research-card .research-components {
 }
 .catalog-actions .text-link {
   margin-left: auto;
+}
+.catalog-refresh-note {
+  margin: -7px 0 14px;
+  color: #77847d;
+  font-size: 11px;
 }
 .category-chips {
   display: flex;

@@ -146,11 +146,14 @@ const hardwareGroups = [
     categories: ["automatic_operator", "activation_device", "safety_sensor"],
   },
   {
-    label: "Controls, power & washroom",
+    label: "Power supplies",
+    categories: ["power_supply"],
+  },
+  {
+    label: "Controls & washroom",
     categories: [
       "controller",
       "access_control",
-      "power_supply",
       "request_to_exit",
       "emergency_release",
       "emergency_call",
@@ -257,6 +260,7 @@ export default function ModelApp() {
   const [checkResult, setCheckResult] = useState(null);
   const [checking, setChecking] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [refreshingCatalog, setRefreshingCatalog] = useState(false);
   const importInput = useRef(null);
   const evidenceImportInput = useRef(null);
 
@@ -470,6 +474,22 @@ export default function ModelApp() {
       event.target.value = "";
     }
   };
+  const refreshLiveCatalog = async () => {
+    setRefreshingCatalog(true);
+    try {
+      const result = await api("/api/catalog/refresh", { method: "POST" });
+      await markSaved();
+      const pagesWithListings = result.sources.filter((source) => source.status === "ok").length;
+      setNotice(
+        `Catalog refresh complete: ${result.products_added} added, ${result.products_refreshed} refreshed. ${pagesWithListings} of ${result.sources.length} pages returned listings; all remain unverified research leads.`,
+      );
+    } catch (error) {
+      setDatabaseState("connected");
+      setNotice(error.message);
+    } finally {
+      setRefreshingCatalog(false);
+    }
+  };
   const downloadTemplate = () => {
     const csv =
       'category,manufacturer,model,name,specifications,source_title,source_url,evidence_status,notes\nautomatic_operator,Example manufacturer,OP-100,Example operator,"{""operator_class"":""low_energy""}",Manufacturer data sheet,https://example.com/review-before-use,research_lead,Replace example values with sourced product data\n';
@@ -621,6 +641,13 @@ export default function ModelApp() {
     } finally {
       setChecking(false);
     }
+  };
+
+  const searchProductCompatibility = (product) => {
+    const exactModel = `"${displayName(product)}"`;
+    const query = `${exactModel} ("compatible with" OR "works with" OR compatibility OR interoperability OR wiring) ("minimum door width" OR "maximum door width" OR "door width" OR "door height" OR "maximum weight" OR "door thickness" OR "door material" OR "frame material" OR voltage OR mounting OR interface) manufacturer specifications datasheet`;
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    window.open(searchUrl, "_blank", "noopener,noreferrer");
   };
 
   const loadExampleAssembly = (scenario) => {
@@ -955,6 +982,9 @@ export default function ModelApp() {
             importing={importing}
             importInput={importInput}
             onTemplate={downloadTemplate}
+            onRefreshLive={refreshLiveCatalog}
+            refreshingCatalog={refreshingCatalog}
+            onSearchCompatibility={searchProductCompatibility}
           />
         )}
 
@@ -1516,7 +1546,7 @@ function ProductForm({ form, setForm, categories, statuses, onSubmit }) {
             value={form.specifications}
             onChange={(event) => update("specifications", event.target.value)}
             placeholder={
-              '{"input_voltage":"24V DC","output_type":"dry_contact"}'
+              '{"power_requirements":{"accepted_voltages":["12VDC"],"current_a":0.3},"power_output":{"voltage":"24VAC","max_current_a":1.5,"documented_load_types":["electric_strike"]},"relay_output":{"type":"dry_contact"}}'
             }
           />
         </Field>
@@ -1795,6 +1825,9 @@ function ProductCatalog({
   importing,
   importInput,
   onTemplate,
+  onRefreshLive,
+  refreshingCatalog,
+  onSearchCompatibility,
 }) {
   const grouped = useMemo(
     () =>
@@ -1820,6 +1853,14 @@ function ProductCatalog({
         <span className="total-pill">{allProducts.length} MODELS</span>
       </div>
       <div className="catalog-actions">
+        <button
+          className="button button-quiet"
+          onClick={onRefreshLive}
+          disabled={refreshingCatalog || importing}
+        >
+          <RefreshCw className={refreshingCatalog ? "spin" : ""} size={15} />
+          {refreshingCatalog ? "Refreshing catalogs…" : "Refresh live catalogs"}
+        </button>
         <button className="button button-primary" onClick={onAdd}>
           <Plus size={16} />
           Add product
@@ -1843,6 +1884,9 @@ function ProductCatalog({
           onChange={onImport}
         />
       </div>
+      <p className="catalog-refresh-note">
+        Use <b>Find compatibility &amp; limits</b> on a product row to search for pairings and published fit limits such as door width, height, weight, materials, voltage, and mounting. Results are research leads, not approvals.
+      </p>
       <div className="category-chips">
         {grouped.map(([key, label, count]) => (
           <span key={key}>
@@ -1904,6 +1948,14 @@ function ProductCatalog({
                     )}
                   </td>
                   <td className="table-actions">
+                    <button
+                      className="button button-small product-search-button"
+                      aria-label={`Search what works with ${displayName(product)}`}
+                      onClick={() => onSearchCompatibility(product)}
+                    >
+                      <Search size={13} />
+                      Find compatibility &amp; limits
+                    </button>
                     <button
                       className="icon-button"
                       aria-label="Edit product"
@@ -2347,7 +2399,9 @@ function CheckResult({ result, onCoverage }) {
                 {displayName(finding.product_a)}
                 {finding.product_b
                   ? ` + ${displayName(finding.product_b)}`
-                  : " · opening fit"}
+                  : finding.finding_type === "power_path"
+                    ? " · power path"
+                    : " · opening fit"}
               </b>
             )}
           </div>

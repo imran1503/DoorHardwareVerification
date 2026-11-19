@@ -4,13 +4,14 @@ import json
 import sqlite3
 from urllib.parse import urlparse
 
-from .catalog import CATEGORIES, EVIDENCE_STATUSES, FIELDS, MODEL_SPECIFIC_FIELDS, PRODUCT_CATEGORIES
-from .compatibility import coverage_rows, coverage_summary, pair_evaluation
+from .catalog import CATEGORIES, EVIDENCE_STATUSES, FIELDS, INTERACTION_PAIRS, MODEL_SPECIFIC_FIELDS, PRODUCT_CATEGORIES
+from .compatibility import coverage_rows, coverage_summary, pair_evaluation, power_path_findings
 from .database import (
     assertion_dict, compatibility_rule_dict, connect, item_dict, normalized_ids,
     product_dict, rule_dict, trusted_evidence, trusted_product_record,
 )
 from .opening_fit import opening_fit_findings
+from .catalog_refresh import refresh_catalogs
 
 class Handler(BaseHTTPRequestHandler):
     def send_json(self, data, status=200):
@@ -32,6 +33,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         with connect() as db:
+            if path == "/api/catalog/status":
+                row = db.execute("SELECT * FROM catalog_scrape_runs ORDER BY id DESC LIMIT 1").fetchone()
+                if not row:
+                    return self.send_json({"last_run": None})
+                latest = dict(row)
+                latest["source_results"] = json.loads(latest["source_results"])
+                return self.send_json({"last_run": latest})
             if path == "/api/bootstrap":
                 items = [item_dict(r) for r in db.execute("SELECT * FROM items ORDER BY category,name")]
                 rules = [rule_dict(r) for r in db.execute("SELECT * FROM rules ORDER BY id DESC")]
@@ -51,6 +59,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urlparse(self.path).path
         data = self.read_json()
+        if path == "/api/catalog/refresh":
+            try:
+                return self.send_json(refresh_catalogs())
+            except RuntimeError as error:
+                return self.send_json({"error": str(error)}, 409)
+            except Exception as error:
+                return self.send_json({"error": f"Catalog refresh failed: {error}"}, 502)
         with connect() as db:
             if path == "/api/products":
                 return self.create_product(db, data)
@@ -331,6 +346,7 @@ class Handler(BaseHTTPRequestHandler):
                         evaluation = pair_evaluation(db, product_a, product_b, context)
                         findings.append({"product_a": product_a, "product_b": product_b, **evaluation})
             findings.extend(opening_fit_findings(products, opening))
+            findings.extend(power_path_findings(products))
             if len(products) == 1 and not findings:
                 findings.append({"status": "unverified", "product_a": products[0], "rationale": "No opening-fit constraint is documented for this selected product category."})
             if not all(trusted_evidence(product["evidence_status"]) for product in products):

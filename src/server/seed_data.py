@@ -83,6 +83,11 @@ def seed_manufacturer_product_data(db):
         ("washroom_control", "CX-WC16-PS-M1", "CX-WC16-PS-M1 Restroom Control Kit with Power Supply", {
             "record_scope": "exact_kit", "controller_model": "60-40E035",
             "supply_input_options": ["12VAC", "24VAC", "12VDC", "24VDC"],
+            "included_power_output": {
+                "voltage": "24VAC", "max_current_a": 2,
+                "source_model": "60-40E035",
+                "documented_models": ["CX-ED1799L-8", "CX-WEC10-K2", "CM-AF141SO", "CM-AF540SO"],
+            },
             "documented_accessories": ["CM-331/42WS-SGLR", "CM-325/42WS", "CM-331/43S-SGLR", "CX-WEC10-K2", "CX-ED1799L-8", "CM-AF141SO", "CM-AF540SO"],
         }, "CX-WC16-PS-M1 Restroom Control Manual", "https://www.camdencontrols.com/pipelines/resource/1007_WC16_PS_M1_Restroom_Control_Manual.pdf", "Manual documents the kit's controller and specific field-device wiring; confirm exact supply and wiring from the diagrams."),
         ("controller", "60-40E035", "60-40E035 Advanced Logic Control Relay with 2A Power Supply", {
@@ -132,6 +137,7 @@ def seed_manufacturer_product_data(db):
     # Keep corrected source-scoped seed facts in sync on repeat initialization.
     for category, model, note in [
         ("washroom_control", "CX-WC17SLVR", "The kit manual lists its included surface contact but does not identify the exact contact model. Field operator and locking hardware must be selected separately."),
+        ("washroom_control", "CX-WC16-PS-M1", "The kit manual identifies its 60-40E035 controller/power supply and documents the listed lock and annunciator models. Confirm the exact supply configuration and load budget from the wiring diagrams."),
         ("door_contact", "CX-MDA", "Listed by Camden as a surface magnetic door contact for restroom-control applications; verify the selected kit, contact and circuit details."),
     ]:
         specs = next((specs for entry_category, entry_model, _, specs, *_ in camden_products if entry_category == category and entry_model == model), None)
