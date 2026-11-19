@@ -2,10 +2,10 @@
 from http.server import BaseHTTPRequestHandler
 import json
 import sqlite3
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .catalog import CATEGORIES, EVIDENCE_STATUSES, FIELDS, INTERACTION_PAIRS, MODEL_SPECIFIC_FIELDS, PRODUCT_CATEGORIES
-from .compatibility import coverage_rows, coverage_summary, pair_evaluation, power_path_findings
+from .compatibility import assembly_estimate, coverage_rows, coverage_summary, pair_estimate, pair_evaluation, pair_is_applicable, power_path_findings
 from .database import (
     assertion_dict, compatibility_rule_dict, connect, item_dict, normalized_ids,
     product_dict, rule_dict, trusted_evidence, trusted_product_record,
@@ -49,8 +49,27 @@ class Handler(BaseHTTPRequestHandler):
                 compatibility_rules = [compatibility_rule_dict(r) for r in db.execute("SELECT * FROM compatibility_rules ORDER BY id DESC")]
                 return self.send_json({"items": items, "rules": rules, "researchNotes": research_notes, "categories": CATEGORIES, "fields": FIELDS, "products": products, "productCategories": PRODUCT_CATEGORIES, "assertions": assertions, "compatibilityRules": compatibility_rules, "evidenceStatuses": EVIDENCE_STATUSES})
             if path == "/api/coverage":
+                query = parse_qs(urlparse(self.path).query)
                 rows = coverage_rows(db)
-                return self.send_json({"rows": rows, "summary": coverage_summary(rows), "interactionPairs": INTERACTION_PAIRS})
+                summary = coverage_summary(rows)
+                status_filter = query.get("status", ["applicable"])[0]
+                search = query.get("q", [""])[0].strip().casefold()
+                if status_filter == "applicable":
+                    filtered = [row for row in rows if row.get("applicable")]
+                elif status_filter == "all":
+                    filtered = rows
+                else:
+                    filtered = [row for row in rows if row.get("status") == status_filter]
+                if search:
+                    filtered = [row for row in filtered if search in " ".join((row["product_a"].get("name", ""), row["product_a"].get("manufacturer", ""), row["product_a"].get("model", ""), row["product_b"].get("name", ""), row["product_b"].get("manufacturer", ""), row["product_b"].get("model", ""))).casefold()]
+                try:
+                    page = max(1, int(query.get("page", ["1"])[0]))
+                    page_size = min(100, max(1, int(query.get("page_size", ["50"])[0])))
+                except ValueError:
+                    page, page_size = 1, 50
+                total_filtered = len(filtered)
+                start = (page - 1) * page_size
+                return self.send_json({"rows": filtered[start:start + page_size], "summary": summary, "interactionPairs": INTERACTION_PAIRS, "page": page, "page_size": page_size, "total_filtered": total_filtered, "pages": (total_filtered + page_size - 1) // page_size, "filter": status_filter, "query": search})
             if path == "/api/health":
                 db.execute("SELECT 1").fetchone()
                 return self.send_json({"ok": True, "database": "sqlite"})
@@ -332,6 +351,7 @@ class Handler(BaseHTTPRequestHandler):
             context = data.get("context", {}) if isinstance(data.get("context", {}), dict) else {}
             context = {**opening, **context}
             findings = []
+            pair_estimates = []
             exact_applies = False
             if exact:
                 assertion = assertion_dict(exact)
@@ -343,8 +363,11 @@ class Handler(BaseHTTPRequestHandler):
             if not exact_applies:
                 for left_index, product_a in enumerate(products):
                     for product_b in products[left_index + 1:]:
+                        if not pair_is_applicable(product_a, product_b, db):
+                            continue
                         evaluation = pair_evaluation(db, product_a, product_b, context)
                         findings.append({"product_a": product_a, "product_b": product_b, **evaluation})
+                        pair_estimates.append(pair_estimate(db, product_a, product_b, context))
             findings.extend(opening_fit_findings(products, opening))
             findings.extend(power_path_findings(products))
             if len(products) == 1 and not findings:
@@ -352,16 +375,33 @@ class Handler(BaseHTTPRequestHandler):
             if not all(trusted_evidence(product["evidence_status"]) for product in products):
                 findings.append({"status": "unverified", "rationale": "At least one selected product is still a research lead; verify its exact model and specifications from a primary source."})
             if len(products) > 2:
-                findings.append({"status": "unverified", "rationale": "Pair checks do not prove the complete multi-device assembly. Add an assembly-level assertion or test record."})
+                findings.append({
+                    "status": "unverified",
+                    "finding_type": "assembly_level",
+                    "rationale": "No complete-assembly record covers this exact selected product set. Pair checks and shared-power checks are useful component checks, but do not prove the full wiring, control sequence, and combined operation. Add documentation or a field-test record for this exact assembly.",
+                })
             statuses = [finding["status"] for finding in findings]
-            status = "incompatible" if "incompatible" in statuses else "conditional" if "conditional" in statuses else "unverified" if "unverified" in statuses else "compatible"
+            status = "incompatible" if "incompatible" in statuses else "conditional" if "conditional" in statuses else "compatible" if statuses and all(value == "compatible" for value in statuses) else "unverified"
             messages = {
                 "compatible": "All applicable checks passed using sourced product data.",
                 "incompatible": "At least one selected product pair has a documented conflict.",
                 "conditional": "A documented condition must be satisfied before this combination can be used.",
                 "unverified": "Some selected products or interactions do not have enough verified evidence yet.",
             }
-            return self.send_json({"status": status, "message": messages[status], "assertion": assertion if exact_applies else None, "products": products, "findings": findings})
+            assembly_level_findings = [
+                finding for finding in findings
+                if (finding.get("product_a") and not finding.get("product_b"))
+                or finding.get("finding_type") in {"power_path", "assembly_level"}
+            ]
+            estimate = assembly_estimate(pair_estimates, assembly_level_findings, assertion if exact_applies else None)
+            if len(products) > 2 and not exact_applies and estimate.get("score") is not None and estimate.get("verdict") != "incompatible":
+                # A favorable average of pair results must never read as proof
+                # that a multi-device system works as one complete assembly.
+                estimate["verdict"] = "unverified"
+                estimate["message"] = "Pair and component checks are only partial evidence. Verify the exact complete assembly with manufacturer documentation or a field test."
+            if estimate.get("score") is not None:
+                status = estimate["verdict"]
+            return self.send_json({"status": status, "message": estimate["message"] if estimate.get("score") is not None else messages[status], "estimate": estimate, "assertion": assertion if exact_applies else None, "products": products, "findings": findings})
 
     def do_PUT(self):
         path = urlparse(self.path).path

@@ -1,5 +1,14 @@
+@font-face {
+  font-family: "FOT-NewRodin Pro EB";
+  src: url("./assets/fonts/fot-newrodin-pro-eb.otf") format("opentype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
 :root {
-  font-family: "DM Sans", sans-serif;
+  --body-font: "DM Sans", sans-serif;
+  --heading-font: "Manrope";
+  font-family: var(--body-font);
   color: #192423;
   background: #f5f7f6;
   font-synthesis: none;
@@ -53,7 +62,7 @@ button {
 }
 .brand strong {
   font:
-    800 16.5px Manrope,
+    800 16.5px var(--heading-font),
     sans-serif;
   letter-spacing: -0.45px;
   display: block;
@@ -253,7 +262,7 @@ button {
 }
 .page-heading h1 {
   font:
-    600 29px Manrope,
+    600 29px var(--heading-font),
     sans-serif;
   letter-spacing: -1.05px;
   margin: 0;
@@ -350,7 +359,7 @@ button {
 .section-heading h2,
 .catalog-toolbar h2 {
   font:
-    600 14px Manrope,
+    600 14px var(--heading-font),
     sans-serif;
   margin: 0;
   letter-spacing: -0.2px;
@@ -548,7 +557,7 @@ button {
 .empty-result h3,
 .result-content h3 {
   font:
-    600 17px Manrope,
+    600 17px var(--heading-font),
     sans-serif;
   letter-spacing: -0.35px;
   margin: 9px 0 7px;
@@ -907,7 +916,7 @@ button {
 }
 .rule-title h3 {
   font:
-    600 13px Manrope,
+    600 13px var(--heading-font),
     sans-serif;
   margin: 0 0 5px;
   color: #34433c;
@@ -982,7 +991,7 @@ button {
 }
 .modal-head h2 {
   font:
-    600 19px Manrope,
+    600 19px var(--heading-font),
     sans-serif;
   letter-spacing: -0.5px;
   margin: 8px 0 4px;
@@ -1257,7 +1266,7 @@ button {
 }
 .research-card h2 {
   font:
-    600 13px Manrope,
+    600 13px var(--heading-font),
     sans-serif;
   margin: 0 0 7px;
   color: #34433c;
@@ -1754,7 +1763,7 @@ html[data-theme="dark"] .modal-head p {
 }
 .field-group-heading h3 {
   font:
-    600 11px Manrope,
+    600 11px var(--heading-font),
     sans-serif;
   letter-spacing: 0.05px;
   color: #495951;
@@ -1800,13 +1809,158 @@ html[data-theme="dark"] .research-card .research-components {
 /* Product library and evidence-driven compatibility screens */
 .model-page,
 .model-check-page {
-  max-width: 1390px;
+  max-width: 1700px;
+  padding-right: clamp(14px, 2.2vw, 40px);
+  padding-left: clamp(14px, 2.2vw, 40px);
+}
+.model-check-page {
+  --body-font: "DM Sans", sans-serif;
+  --heading-font: "Manrope";
+  --mono: "DM Mono", monospace;
+}
+.model-check-page .page-heading h1 {
+  font-family: "FOT-NewRodin Pro EB", sans-serif;
 }
 .model-check-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(310px, 0.8fr);
   gap: 17px;
   align-items: start;
+}
+.model-check-page.report-panel-hidden {
+  max-width: none;
+}
+.model-check-grid.report-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+.report-show-button {
+  flex: none;
+}
+.report-sidebar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.report-sidebar-actions .button {
+  white-space: nowrap;
+}
+.assembly-report-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 34px;
+  background: rgb(0 0 0 / 68%);
+}
+.assembly-report-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(1040px, 100%);
+  max-height: min(92vh, 1000px);
+  overflow: hidden;
+  border: 1px solid #d8e0db;
+  border-radius: 10px;
+  background: #fff;
+  color: #26332d;
+  box-shadow: 0 22px 76px rgb(0 0 0 / 42%);
+  outline: none;
+}
+.assembly-report-dialog-header {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 25px;
+  border-bottom: 1px solid #e4e9e6;
+  background: inherit;
+}
+.assembly-report-dialog-header h2 {
+  margin: 5px 0 0;
+  font: 600 21px var(--heading-font), sans-serif;
+}
+.assembly-report-dialog-header .result-kicker {
+  color: #77837d;
+  font: 11px var(--mono);
+  letter-spacing: 1px;
+}
+.assembly-report-dialog-body {
+  overflow-y: auto;
+  padding: 20px 25px 25px;
+}
+.report-products-summary {
+  padding: 14px 16px;
+  margin-bottom: 15px;
+  border: 1px solid #e2e8e4;
+  border-radius: 6px;
+  background: #f7f9f8;
+  font-size: 13px;
+}
+.report-products-summary > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 9px;
+}
+.report-products-summary span {
+  padding: 6px 9px;
+  border: 1px solid #dfe6e1;
+  border-radius: 5px;
+  background: #fff;
+  font-size: 13px;
+}
+.assembly-report-dialog .assembly-result-content {
+  gap: 16px;
+}
+.assembly-report-dialog .assembly-result-content h3 {
+  font-size: 28px;
+}
+.assembly-report-dialog .assembly-result-content > p {
+  max-width: 850px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.assembly-report-dialog .assembly-estimate {
+  padding: 19px;
+  margin: 2px 0 8px;
+}
+.assembly-report-dialog .assembly-estimate-head small,
+.assembly-report-dialog .assembly-estimate > small {
+  font-size: 12px;
+}
+.assembly-report-dialog .assembly-estimate-head strong {
+  font-size: 30px;
+}
+.assembly-report-dialog .assembly-estimate > p {
+  font-size: 13px;
+}
+.assembly-report-dialog .finding-card {
+  padding: 17px;
+}
+.assembly-report-dialog .finding-title b {
+  font-size: 15px;
+}
+.assembly-report-dialog .finding-card p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.assembly-report-dialog .status-pill {
+  font-size: 12px;
+}
+.assembly-report-dialog .source-link {
+  font-size: 13px;
+}
+.assembly-report-dialog .text-link {
+  font-size: 13px;
+}
+.assembly-report-dialog .icon-button {
+  min-width: 36px;
+  min-height: 36px;
 }
 .assembly-panel {
   min-width: 0;
@@ -1885,7 +2039,7 @@ html[data-theme="dark"] .research-card .research-components {
 }
 .selected-products-heading h2 {
   font:
-    600 14px Manrope,
+    600 14px var(--heading-font),
     sans-serif;
   margin: 0;
   color: #34423c;
@@ -1923,7 +2077,7 @@ html[data-theme="dark"] .research-card .research-components {
 }
 .empty-report h3 {
   font:
-    600 18px Manrope,
+    600 18px var(--heading-font),
     sans-serif;
   margin: 0;
   color: #24332c;
@@ -1948,7 +2102,7 @@ html[data-theme="dark"] .research-card .research-components {
 }
 .assembly-result-content h3 {
   font:
-    600 21px Manrope,
+    600 21px var(--heading-font),
     sans-serif;
   margin: 0;
   color: #24332c;
@@ -2120,7 +2274,7 @@ html[data-theme="dark"] .research-card .research-components {
 }
 .coverage-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(100px, 1fr));
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
   gap: 10px;
   margin: 0 0 13px;
 }
@@ -2139,7 +2293,7 @@ html[data-theme="dark"] .research-card .research-components {
 }
 .coverage-stat b {
   font:
-    600 21px Manrope,
+    600 21px var(--heading-font),
     sans-serif;
   color: #34443b;
 }
@@ -2161,15 +2315,98 @@ html[data-theme="dark"] .research-card .research-components {
   color: #56836b;
 }
 .coverage-table {
-  min-width: 860px;
+  min-width: 1040px;
 }
-.coverage-table td:nth-child(4) {
+.coverage-table td:nth-child(5) {
   max-width: 400px;
   line-height: 1.45;
 }
-.coverage-table td:nth-child(4) .source-link {
+.coverage-table td:nth-child(5) .source-link {
   display: flex;
   margin-top: 5px;
+}
+.coverage-table td small {
+  display: block;
+  margin-top: 4px;
+  color: #89958f;
+  font-size: 10px;
+}
+.coverage-filters,
+.coverage-pagination,
+.coverage-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.coverage-filters input,
+.coverage-filters select {
+  height: 35px;
+  border: 1px solid #dfe5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: #36423e;
+  padding: 0 10px;
+  font-size: 11px;
+}
+.coverage-filters input { width: 220px; }
+.coverage-filters select { min-width: 160px; }
+.coverage-pagination {
+  justify-content: space-between;
+  margin-top: 12px;
+  color: #788583;
+  font-size: 11px;
+}
+.assembly-estimate {
+  margin: 14px 0;
+  padding: 13px;
+  border: 1px solid #dfe7e2;
+  border-radius: 6px;
+  background: #f7faf8;
+}
+.assembly-estimate-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+.assembly-estimate-head > div { display: grid; gap: 4px; }
+.assembly-estimate-head small,
+.assembly-estimate > small {
+  color: #788583;
+  font: 9px var(--mono);
+  line-height: 1.5;
+}
+.assembly-estimate-head strong {
+  color: #244b3b;
+  font: 700 22px var(--heading-font), sans-serif;
+}
+.estimate-meter {
+  height: 7px;
+  margin: 11px 0 8px;
+  border-radius: 10px;
+  background: #e2e7e4;
+  overflow: hidden;
+}
+.estimate-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #338366;
+}
+.assembly-estimate > p {
+  margin: 0 0 6px;
+  color: #697771;
+  font-size: 10px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .model-subheading {
   display: flex;
@@ -2180,7 +2417,7 @@ html[data-theme="dark"] .research-card .research-components {
 }
 .model-subheading h2 {
   font:
-    600 14px Manrope,
+    600 14px var(--heading-font),
     sans-serif;
   margin: 0;
   color: #34423c;
@@ -2214,7 +2451,7 @@ html[data-theme="dark"] .research-card .research-components {
 }
 .model-record-top h3 {
   font:
-    600 11px Manrope,
+    600 11px var(--heading-font),
     sans-serif;
   color: #34423c;
   margin: 0;
@@ -2329,6 +2566,28 @@ html[data-theme="dark"] .product-table td {
   color: #bbb;
 }
 html[data-theme="dark"] .coverage-stat small {
+  color: #aaa;
+}
+html[data-theme="dark"] .coverage-filters input,
+html[data-theme="dark"] .coverage-filters select {
+  background: #171717;
+  border-color: #3a3a3a;
+  color: #e1e1e1;
+}
+html[data-theme="dark"] .coverage-table td small,
+html[data-theme="dark"] .coverage-pagination {
+  color: #a2a2a2;
+}
+html[data-theme="dark"] .assembly-estimate {
+  background: #242424;
+  border-color: #3a3a3a;
+}
+html[data-theme="dark"] .assembly-estimate-head strong {
+  color: #d4e4dc;
+}
+html[data-theme="dark"] .assembly-estimate-head small,
+html[data-theme="dark"] .assembly-estimate > small,
+html[data-theme="dark"] .assembly-estimate > p {
   color: #aaa;
 }
 html[data-theme="dark"] .model-form .modal-actions,
@@ -2550,6 +2809,30 @@ html[data-theme="dark"] .empty-report > p {
 html[data-theme="dark"] .assembly-report-section {
   border-color: #373737;
 }
+html[data-theme="dark"] .assembly-report-dialog {
+  border-color: #414141;
+  background: #202020;
+  color: #ededed;
+}
+html[data-theme="dark"] .assembly-report-dialog-header {
+  border-color: #3c3c3c;
+}
+html[data-theme="dark"] .assembly-report-dialog-header h2 {
+  color: #ededed;
+}
+html[data-theme="dark"] .assembly-report-dialog-header .result-kicker {
+  color: #aaa;
+}
+html[data-theme="dark"] .report-products-summary {
+  background: #242424;
+  border-color: #3b3b3b;
+  color: #ddd;
+}
+html[data-theme="dark"] .report-products-summary span {
+  background: #1d1d1d;
+  border-color: #404040;
+  color: #ddd;
+}
 html[data-theme="dark"] .status-pill.status-compatible,
 html[data-theme="dark"] .status-pill.status-company_approved {
   background: #25362b;
@@ -2588,6 +2871,12 @@ html[data-theme="dark"] .opening-details > summary span {
 .page-heading p {
   font-size: 14px;
 }
+@media (max-width: 900px) {
+  .coverage-summary { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+  .coverage-panel .catalog-toolbar { align-items: flex-start; flex-direction: column; }
+  .coverage-filters { width: 100%; flex-wrap: wrap; }
+  .coverage-filters input { flex: 1; min-width: 180px; }
+}
 .page-heading-actions {
   display: flex;
   align-items: center;
@@ -2612,37 +2901,37 @@ html[data-theme="dark"] .opening-details > summary span {
   font-size: 12px;
 }
 .opening-details > summary {
-  font-size: 11px;
+  font-size: 20px;
 }
 .opening-details > summary span {
-  font-size: 10px;
+  font-size: 16px;
 }
 .opening-fields .field > span,
 .hardware-picker-grid .field > span {
-  font-size: 10px;
+  font-size: 16px;
 }
 .opening-fields .field input,
 .opening-fields .select-wrap select {
-  font-size: 11px;
+  font-size: 17px;
 }
 .opening-fit-preview {
-  font-size: 10px;
+  font-size: 15px;
 }
 .opening-fit-heading b {
-  font-size: 11px;
+  font-size: 16px;
 }
 .opening-fit-finding strong,
 .opening-fit-finding span {
-  font-size: 10px;
+  font-size: 15px;
 }
 .hardware-picker-heading b {
-  font-size: 11px;
+  font-size: 20px;
 }
 .hardware-picker-heading span {
-  font-size: 10px;
+  font-size: 16px;
 }
 .hardware-picker-grid .select-wrap select {
-  font-size: 11px;
+  font-size: 17px;
 }
 .assembly-product b {
   font-size: 12px;
@@ -2683,6 +2972,17 @@ html[data-theme="dark"] .select-wrap select {
     grid-template-columns: repeat(3, minmax(90px, 1fr));
   }
 }
+@media (max-width: 800px) {
+  .report-sidebar-actions {
+    justify-content: flex-start;
+  }
+  .assembly-report-backdrop {
+    padding: 16px;
+  }
+  .assembly-report-dialog {
+    max-height: 96vh;
+  }
+}
 @media (max-width: 620px) {
   .add-product-row {
     align-items: stretch;
@@ -2703,6 +3003,22 @@ html[data-theme="dark"] .select-wrap select {
   }
   .assembly-result-content {
     padding: 18px;
+  }
+  .assembly-report-backdrop {
+    padding: 0;
+  }
+  .assembly-report-dialog {
+    min-height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+  .assembly-report-dialog-header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 15px;
+  }
+  .assembly-report-dialog-body {
+    padding: 15px;
   }
 }
 @media (max-width: 720px) {

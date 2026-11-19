@@ -43,7 +43,7 @@ def _voltage_values(value):
 
 def _voltage_nominals(values):
     return {
-        f"{float(match):g}V"
+        f"{float(match.group(1)):g}V"
         for value in values
         if (match := re.match(r"(\d+(?:\.\d+)?)V(?:AC|DC)$", value))
     }
@@ -302,28 +302,305 @@ def pair_evaluation(db, product_a, product_b, context=None):
     status = "incompatible" if "incompatible" in statuses else "conditional" if "conditional" in statuses else "unverified" if "unverified" in statuses else "compatible"
     return {"status": status, "rationale": " ".join(outcome["rationale"] for outcome in outcomes if outcome.get("rationale")), "sources": outcomes}
 
+def _interaction_pairs():
+    return {tuple(sorted(pair)) for pair in INTERACTION_PAIRS}
+
+
+def pair_is_applicable(product_a, product_b, db=None):
+    if tuple(sorted((product_a["category"], product_b["category"]))) in _interaction_pairs():
+        return True
+    if db is None:
+        return False
+    pair_json = json.dumps(sorted((product_a["id"], product_b["id"])), separators=(",", ":"))
+    return db.execute(
+        "SELECT 1 FROM compatibility_assertions WHERE product_ids=? LIMIT 1", (pair_json,)
+    ).fetchone() is not None
+
+
+def _product_confidence(product):
+    status_base = {
+        "research_lead": 18,
+        "manufacturer_document": 72,
+        "field_verified": 88,
+        "company_approved": 92,
+    }.get(product.get("evidence_status"), 10)
+    specs = product.get("specifications", {})
+    spec_markers = {
+        "opening_limits", "power_requirements", "power_output", "accessory_power_output",
+        "included_power_output", "supply_options", "voltage_options", "activation_interface",
+        "input_contact_type", "output_contact_type", "lock_output", "relay_output_type",
+        "door_preparation", "frame_preparation", "supported_interfaces", "current_draw_a",
+    }
+    detail_count = sum(marker in specs for marker in spec_markers)
+    completeness = min(1.0, 0.4 + 0.12 * detail_count)
+    scope_factor = {
+        "exact_model": 1.0,
+        "exact_configuration": 0.95,
+        "exact_kit": 0.95,
+        "series_reference": 0.62,
+        "model_family": 0.52,
+    }.get(specs.get("record_scope"), 0.72)
+    source_factor = 1.0 if product.get("source_url") else 0.7
+    return round(status_base * completeness * scope_factor * source_factor)
+
+
+def _evidence_confidence(status):
+    return {
+        "research_lead": 20,
+        "manufacturer_document": 92,
+        "field_verified": 96,
+        "company_approved": 98,
+    }.get(status, 12)
+
+
+def _estimate_label(score, confidence, evidence_status=None):
+    if evidence_status in {"compatible", "incompatible", "conditional"}:
+        return f"Sourced {evidence_status}"
+    if confidence < 40:
+        return "Unknown · weak evidence"
+    if score >= 80:
+        return "Likely compatible"
+    if score <= 20:
+        return "Likely incompatible"
+    if score >= 60:
+        return "Possible fit · review"
+    if score <= 40:
+        return "Possible conflict · review"
+    return "Unknown"
+
+
+def _inferred_pair_signal(product_a, product_b, baseline_confidence):
+    """Return a cautious directional estimate from product-level evidence.
+
+    These are heuristics, not pair approvals. Keep their explanations attached
+    to the result so users can see exactly which signal moved it off neutral.
+    """
+    specs_a, specs_b = product_a["specifications"], product_b["specifications"]
+    manufacturer_a = " ".join(product_a.get("manufacturer", "").casefold().split())
+    manufacturer_b = " ".join(product_b.get("manufacturer", "").casefold().split())
+
+    series_a = specs_a.get("manufacturer_series")
+    series_b = specs_b.get("manufacturer_series")
+    if manufacturer_a and manufacturer_a == manufacturer_b and series_a and series_b and str(series_a).casefold() == str(series_b).casefold():
+        confidence = min(max(baseline_confidence, 35), 58)
+        return 68, confidence, (
+            f"Estimated fit: both products are documented in the {product_a['manufacturer']} {series_a} family. "
+            "Shared product-family evidence supports a favorable estimate, but does not confirm that these exact models are approved together."
+        )
+
+    # Some operator records list supported activation interfaces while the
+    # companion device lists the interface it provides. A direct match is useful
+    # evidence, though wiring and exact configuration still need confirmation.
+    interface_pairs = (
+        (specs_a.get("supported_activation_interfaces"), specs_b.get("activation_interface"), product_a, product_b),
+        (specs_b.get("supported_activation_interfaces"), specs_a.get("activation_interface"), product_b, product_a),
+        (specs_a.get("supported_interfaces"), specs_b.get("activation_interface"), product_a, product_b),
+        (specs_b.get("supported_interfaces"), specs_a.get("activation_interface"), product_b, product_a),
+    )
+    for supported, provided, operator, device in interface_pairs:
+        if isinstance(supported, str):
+            supported = [supported]
+        if provided and isinstance(supported, (list, tuple, set)) and str(provided).casefold() in {str(value).casefold() for value in supported}:
+            confidence = min(max(baseline_confidence, 40), 65)
+            return 82, confidence, (
+                f"Estimated fit: {operator['name']} documents support for the {provided} interface listed by {device['name']}. "
+                "Confirm the exact wiring, options and installation instructions before treating the pair as approved."
+            )
+
+    if manufacturer_a and manufacturer_a == manufacturer_b:
+        both_trusted = trusted_product_record(product_a) and trusted_product_record(product_b)
+        floor, ceiling, score = (30, 48, 59) if both_trusted else (12, 25, 56)
+        confidence = min(max(baseline_confidence, floor), ceiling)
+        return score, confidence, (
+            f"Estimated fit: both products are from {product_a['manufacturer']}. The shared manufacturer is a weak ecosystem signal only; "
+            "it does not establish that these exact models connect, fit, or are approved together."
+        )
+
+    return None
+
+
+def pair_estimate(db, product_a, product_b, context=None):
+    """Return the sourced pair result plus an explicitly uncertain 0–100 estimate."""
+    if not pair_is_applicable(product_a, product_b, db):
+        return {
+            "applicable": False,
+            "status": "not_applicable",
+            "evidence_status": "not_applicable",
+            "compatibility_score": None,
+            "confidence_score": None,
+            "adjusted_score": None,
+            "estimate_label": "No declared interaction",
+            "rationale": "This category combination has no declared direct interaction; it is listed for full pair inventory and excluded from assembly averages.",
+        }
+
+    evaluation = pair_evaluation(db, product_a, product_b, context)
+    evidence_outcome = evaluation.get("status", "unverified")
+    confidence_a, confidence_b = _product_confidence(product_a), _product_confidence(product_b)
+    baseline_confidence = min(confidence_a, confidence_b)
+    score = 50
+    confidence = baseline_confidence
+    rationale = evaluation.get("rationale", "No product-specific evidence is recorded for this pair.")
+    evidence_status = None
+
+    if evidence_outcome in {"compatible", "incompatible", "conditional"}:
+        score = {"compatible": 100, "incompatible": 0, "conditional": 60}[evidence_outcome]
+        evidence_status = evaluation.get("evidence_status")
+        if evidence_status:
+            confidence = _evidence_confidence(evidence_status)
+        elif evaluation.get("sources"):
+            confidence = min(_evidence_confidence(source.get("evidence_status")) for source in evaluation["sources"])
+        else:
+            confidence = baseline_confidence
+    else:
+        confidence = min(baseline_confidence, 25)
+        pair_ids_json = json.dumps(sorted((product_a["id"], product_b["id"])), separators=(",", ":"))
+        research_assertion = db.execute(
+            "SELECT outcome,evidence_status,rationale FROM compatibility_assertions WHERE product_ids=? AND conditions='{}' ORDER BY updated_at DESC LIMIT 1",
+            (pair_ids_json,),
+        ).fetchone()
+        if research_assertion:
+            score = {"compatible": 100, "incompatible": 0, "conditional": 60}[research_assertion["outcome"]]
+            evidence_status = research_assertion["evidence_status"]
+            confidence = min(_evidence_confidence(evidence_status), max(baseline_confidence, 25))
+            rationale = research_assertion["rationale"] or "A product-pair assertion exists but needs review at its recorded evidence level."
+        else:
+            power_findings = power_path_findings([product_a, product_b])
+            hard_power_conflict = next((item for item in power_findings if item["status"] == "incompatible"), None)
+            power_condition = next((item for item in power_findings if item["status"] == "conditional"), None)
+            if hard_power_conflict:
+                score = 10
+                confidence = max(baseline_confidence, 35)
+                rationale = hard_power_conflict["rationale"]
+            elif power_condition:
+                power_note = power_condition["rationale"].casefold()
+                voltage_match = "does not directly match" not in power_note and (
+                    ("provides " in power_note and "but its documentation" in power_note)
+                    or ("matches a " in power_note and " option for " in power_note)
+                    or ("matches " in power_note and " at " in power_note)
+                )
+                score = 64 if voltage_match else 40
+                confidence = min(max(baseline_confidence, 20 if voltage_match else 15), 45)
+                rationale = power_condition["rationale"]
+            elif any(item["status"] == "compatible" for item in power_findings):
+                score = 80
+                confidence = min(max(baseline_confidence, 30), 60)
+                rationale = next(item["rationale"] for item in power_findings if item["status"] == "compatible")
+            else:
+                inferred = _inferred_pair_signal(product_a, product_b, baseline_confidence)
+                if inferred:
+                    score, confidence, rationale = inferred
+
+    adjusted = 50 + (score - 50) * confidence / 100
+    return {
+        "applicable": True,
+        "status": evidence_outcome,
+        "evidence_status": evidence_status or "unverified",
+        "compatibility_score": score,
+        "confidence_score": confidence,
+        "adjusted_score": round(adjusted, 1),
+        "estimate_label": _estimate_label(score, confidence, evidence_outcome if evidence_outcome != "unverified" else None),
+        "rationale": rationale,
+        "source_title": evaluation.get("source_title", ""),
+        "source_url": evaluation.get("source_url", ""),
+    }
+
+
+def _finding_estimate(finding):
+    score = {"compatible": 100, "incompatible": 0, "conditional": 60, "unverified": 50}.get(finding.get("status"), 50)
+    product = finding.get("product_a")
+    confidence = _product_confidence(product) if product else 15
+    if finding.get("status") == "conditional":
+        confidence = min(confidence, 45)
+    elif finding.get("status") == "unverified":
+        confidence = min(confidence, 25)
+    elif finding.get("status") in {"compatible", "incompatible"} and product and trusted_product_record(product):
+        confidence = max(confidence, 70)
+    return {"compatibility_score": score, "confidence_score": confidence, "adjusted_score": round(50 + (score - 50) * confidence / 100, 1), "status": finding.get("status", "unverified")}
+
+
+def assembly_estimate(pair_estimates, extra_findings=(), assertion=None):
+    factors = [item for item in pair_estimates if item.get("applicable")]
+    factors.extend(_finding_estimate(item) for item in extra_findings)
+    if assertion:
+        confidence = _evidence_confidence(assertion.get("evidence_status"))
+        score = {"compatible": 100, "incompatible": 0, "conditional": 60}.get(assertion.get("outcome"), 50)
+        factors.append({"score": score, "compatibility_score": score, "confidence_score": confidence,
+                        "adjusted_score": round(50 + (score - 50) * confidence / 100),
+                        "status": assertion.get("outcome"), "applicable": True})
+    if not factors:
+        return {
+            "score": None, "confidence": 0, "applicable_pairs": 0, "checks_in_average": 0,
+            "verdict": "unverified", "message": "There are no applicable product pairs to average yet.",
+        }
+    score = round(sum(item["adjusted_score"] for item in factors) / len(factors))
+    confidence = round(sum(item["confidence_score"] for item in factors) / len(factors))
+    strong_conflict = any(item["status"] == "incompatible" and item["confidence_score"] >= 75 for item in factors)
+    all_sourced_compatible = all(item["status"] == "compatible" and item["confidence_score"] >= 85 for item in factors)
+    if strong_conflict:
+        verdict = "incompatible"
+        message = "At least one well-supported conflict overrides the average."
+    elif all_sourced_compatible:
+        verdict = "compatible"
+        message = "All evaluated interactions have strong sourced support."
+    elif score >= 75 and confidence >= 60:
+        verdict = "likely_compatible"
+        message = "The confidence-adjusted average is favorable, with enough supporting evidence for a likely-fit estimate."
+    elif score <= 25 and confidence >= 60:
+        verdict = "likely_incompatible"
+        message = "The confidence-adjusted average indicates likely conflicts."
+    elif score >= 58 and confidence >= 35:
+        verdict = "conditional"
+        message = "The average is promising, but incomplete or mixed evidence leaves conditions to resolve."
+    else:
+        verdict = "unverified"
+        message = "The estimate remains near neutral because evidence or model specifications are incomplete."
+    return {
+        "score": score,
+        "confidence": confidence,
+        "applicable_pairs": sum(item.get("applicable", False) for item in pair_estimates),
+        "checks_in_average": len(factors),
+        "verdict": verdict,
+        "message": message,
+        "method": "Provisional model: pair estimates may use direct compatibility evidence, specification/interface matches, power-path signals, or weaker manufacturer and product-family signals. Confidence is a heuristic for evidence strength, not a calibrated probability. Pair scores are pulled toward neutral (50) by confidence, then averaged. For three or more products, a favorable average does not verify the full assembly without an exact assembly record. Strong documented conflicts override the average.",
+    }
+
+
+def _product_summary(product):
+    return {key: product.get(key) for key in ("id", "category", "manufacturer", "model", "name", "evidence_status", "source_title", "source_url")}
+
+
+_coverage_cache = {"signature": None, "rows": None, "summary": None}
+
+
 def coverage_rows(db):
+    signature = tuple(
+        tuple(row) for row in db.execute(
+            "SELECT 'products',count(*),max(updated_at) FROM products WHERE active=1 "
+            "UNION ALL SELECT 'assertions',count(*),max(updated_at) FROM compatibility_assertions "
+            "UNION ALL SELECT 'rules',count(*),max(updated_at) FROM compatibility_rules"
+        )
+    )
+    if signature == _coverage_cache["signature"] and _coverage_cache["rows"] is not None:
+        return _coverage_cache["rows"]
     products = [product_dict(row) for row in db.execute("SELECT * FROM products WHERE active=1 ORDER BY category,manufacturer,model")]
-    by_category = {}
-    for product in products:
-        by_category.setdefault(product["category"], []).append(product)
-    seen = set()
     rows = []
-    for category_a, category_b in INTERACTION_PAIRS:
-        category_key = tuple(sorted((category_a, category_b)))
-        if category_key in seen:
-            continue
-        seen.add(category_key)
-        for product_a in by_category.get(category_a, []):
-            for product_b in by_category.get(category_b, []):
-                evaluation = pair_evaluation(db, product_a, product_b)
-                rows.append({"product_a": product_a, "product_b": product_b, **evaluation})
+    for index, product_a in enumerate(products):
+        for product_b in products[index + 1:]:
+            estimate = pair_estimate(db, product_a, product_b)
+            rows.append({"product_a": _product_summary(product_a), "product_b": _product_summary(product_b), **estimate})
+    _coverage_cache.update(signature=signature, rows=rows, summary=coverage_summary(rows))
     return rows
 
+
 def coverage_summary(rows):
-    counts = {key: 0 for key in ("compatible", "incompatible", "conditional", "unverified")}
+    counts = {key: 0 for key in ("compatible", "incompatible", "conditional", "unverified", "not_applicable")}
+    applicable = [row for row in rows if row.get("applicable")]
     for row in rows:
         counts[row["status"]] = counts.get(row["status"], 0) + 1
+    scored = [row for row in applicable if row.get("adjusted_score") is not None]
     counts["total"] = len(rows)
-    counts["assessed"] = counts["compatible"] + counts["incompatible"] + counts["conditional"]
+    counts["applicable"] = len(applicable)
+    counts["assessed"] = sum(row["status"] in {"compatible", "incompatible", "conditional"} for row in applicable)
+    counts["average_compatibility_score"] = round(sum(row["adjusted_score"] for row in scored) / len(scored)) if scored else None
+    counts["average_confidence"] = round(sum(row["confidence_score"] for row in scored) / len(scored)) if scored else 0
     return counts

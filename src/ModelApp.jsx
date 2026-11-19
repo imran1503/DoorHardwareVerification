@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faMoon, faSun } from "@fortawesome/free-solid-svg-icons";
 import {
@@ -11,6 +11,9 @@ import {
   FilePlus2,
   Layers3,
   Library,
+  Maximize2,
+  PanelRightClose,
+  PanelRightOpen,
   Pencil,
   Plus,
   RefreshCw,
@@ -258,6 +261,11 @@ export default function ModelApp() {
   const [opening, setOpening] = useState(emptyOpening);
   const [openingPreview, setOpeningPreview] = useState(null);
   const [checkResult, setCheckResult] = useState(null);
+  const [reportExpanded, setReportExpanded] = useState(false);
+  const [reportPanelVisible, setReportPanelVisible] = useState(true);
+  const reportDialogRef = useRef(null);
+  const reportTriggerRef = useRef(null);
+  const reportWasExpanded = useRef(false);
   const [checking, setChecking] = useState(false);
   const [importing, setImporting] = useState(false);
   const [refreshingCatalog, setRefreshingCatalog] = useState(false);
@@ -284,10 +292,20 @@ export default function ModelApp() {
     });
     setDatabaseState((state) => (state === "saving" ? "saving" : "connected"));
   };
-  const loadCoverage = async () => {
-    const result = await api("/api/coverage");
-    setCoverage(result);
-  };
+  const loadCoverage = useCallback(async (options = {}) => {
+    const params = new URLSearchParams({
+      page: String(options.page || 1),
+      page_size: "50",
+      status: options.status || "applicable",
+      q: options.query || "",
+    });
+    try {
+      const result = await api(`/api/coverage?${params}`);
+      setCoverage(result);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }, []);
 
   useEffect(() => {
     loadData().catch((error) => {
@@ -322,7 +340,41 @@ export default function ModelApp() {
   useEffect(() => {
     if (page === "coverage")
       loadCoverage().catch((error) => setNotice(error.message));
-  }, [page, data?.products?.length]);
+  }, [page, data?.products?.length, loadCoverage]);
+
+  useEffect(() => {
+    if (!reportExpanded) {
+      if (reportWasExpanded.current && page === "check")
+        reportTriggerRef.current?.focus();
+      reportWasExpanded.current = false;
+      return undefined;
+    }
+    reportWasExpanded.current = true;
+    const dialog = reportDialogRef.current;
+    dialog?.focus();
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setReportExpanded(false);
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = dialog.querySelectorAll(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [reportExpanded, page]);
 
   const categories = data?.productCategories || {};
   const productList = data?.products || [];
@@ -624,18 +676,23 @@ export default function ModelApp() {
       setNotice(error.message);
     }
   };
+  const clearCheckResult = () => {
+    setCheckResult(null);
+    setReportExpanded(false);
+  };
   const runCheck = async () => {
     setChecking(true);
     try {
-      setCheckResult(
-        await api("/api/compatibility/check", {
-          method: "POST",
-          body: JSON.stringify({
-            product_ids: selectedIds,
-            opening: openingContext,
-          }),
+      const result = await api("/api/compatibility/check", {
+        method: "POST",
+        body: JSON.stringify({
+          product_ids: selectedIds,
+          opening: openingContext,
         }),
-      );
+      });
+      setCheckResult(result);
+      setReportPanelVisible(true);
+      setReportExpanded(true);
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -668,7 +725,7 @@ export default function ModelApp() {
     }
     setSelectedIds(exampleProducts.map((product) => String(product.id)));
     setOpening({ ...emptyOpening, ...(scenario.opening || {}) });
-    setCheckResult(null);
+    clearCheckResult();
     setShowExamples(false);
     const testNotice =
       scenario.kind === "unverified"
@@ -803,17 +860,26 @@ export default function ModelApp() {
         )}
 
         {page === "check" && (
-          <section className="content model-check-page">
+          <section className={`content model-check-page${reportPanelVisible ? "" : " report-panel-hidden"}`}>
             <div className="page-heading">
               <div>
-                <h1>Check a hardware assembly</h1>
+                <h1>Verify Hardware Compatibility</h1>
                 <p>
                   Select exact product models. The checker reports which
                   interactions are documented and which still need review.
                 </p>
               </div>
+              {!reportPanelVisible && (
+                <button
+                  className="button button-quiet report-show-button"
+                  onClick={() => setReportPanelVisible(true)}
+                >
+                  <PanelRightOpen size={16} />
+                  Show report panel
+                </button>
+              )}
             </div>
-            <div className="model-check-grid">
+            <div className={`model-check-grid${reportPanelVisible ? "" : " report-hidden"}`}>
               <div className="form-panel assembly-panel">
                 <div className="section-heading">
                   <div className="section-icon">
@@ -824,6 +890,7 @@ export default function ModelApp() {
                     <p>Add the components you want to check together.</p>
                   </div>
                   <button
+                    ref={reportTriggerRef}
                     className="button button-primary assembly-check-button"
                     disabled={
                       checking ||
@@ -862,7 +929,7 @@ export default function ModelApp() {
                     setSelectedIds((ids) =>
                       ids.includes(id) ? ids : [...ids, id],
                     );
-                    setCheckResult(null);
+                    clearCheckResult();
                   }}
                   onAddProduct={() => setPage("products")}
                 />
@@ -873,16 +940,34 @@ export default function ModelApp() {
                   </span>
                 </div>
               </div>
-              <div className="result-panel assembly-result">
+              {reportPanelVisible && <div className="result-panel assembly-result">
                 <section className="selected-products-section">
                   <div className="selected-products-heading">
                     <div>
                       <h2>Selected products</h2>
                       <p>Components included in this check.</p>
                     </div>
-                    <span className="step-chip">
-                      {selectedProducts.length} SELECTED
-                    </span>
+                    <div className="report-sidebar-actions">
+                      <span className="step-chip">
+                        {selectedProducts.length} SELECTED
+                      </span>
+                      <button
+                        className="button button-small"
+                        onClick={() => checkResult && setReportExpanded(true)}
+                        disabled={!checkResult}
+                      >
+                        <Maximize2 size={14} />
+                        Expand report
+                      </button>
+                      <button
+                        className="button button-small"
+                        onClick={() => setReportPanelVisible(false)}
+                        aria-label="Hide report sidebar"
+                      >
+                        <PanelRightClose size={14} />
+                        Hide panel
+                      </button>
+                    </div>
                   </div>
                   <div className="assembly-products">
                     {selectedProducts.map((product) => (
@@ -901,7 +986,7 @@ export default function ModelApp() {
                             setSelectedIds((ids) =>
                               ids.filter((id) => Number(id) !== product.id),
                             );
-                            setCheckResult(null);
+                            clearCheckResult();
                           }}
                         >
                           <X size={16} />
@@ -945,16 +1030,60 @@ export default function ModelApp() {
                     />
                   )}
                 </section>
-              </div>
+              </div>}
             </div>
             <div className="footnote">
               <ShieldCheck size={15} />
               <span>
-                Pairwise results do not prove a multi-device assembly. A
-                complete assembly assertion or field test is required for
-                systems with three or more products.
+                Pair and power checks show individual interactions and shared
+                loads. For three or more products, the full set stays
+                unverified until an assembly-level record or field test covers
+                that exact combination.
               </span>
             </div>
+            {reportExpanded && checkResult && (
+              <div className="assembly-report-backdrop">
+                <section
+                  className="assembly-report-dialog"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="assembly-report-title"
+                  tabIndex={-1}
+                  ref={reportDialogRef}
+                >
+                  <header className="assembly-report-dialog-header">
+                    <div>
+                      <div className="result-kicker">ASSEMBLY REPORT</div>
+                      <h2 id="assembly-report-title">Compatibility review</h2>
+                    </div>
+                    <button
+                      className="button button-quiet"
+                      onClick={() => setReportExpanded(false)}
+                    >
+                      <ChevronDown size={16} />
+                      Collapse to sidebar
+                    </button>
+                  </header>
+                  <div className="assembly-report-dialog-body">
+                    <div className="report-products-summary">
+                      <strong>Products in this check</strong>
+                      <div>
+                        {selectedProducts.map((product) => (
+                          <span key={product.id}>{displayName(product)}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <CheckResult
+                      result={checkResult}
+                      onCoverage={() => {
+                        setReportExpanded(false);
+                        setPage("coverage");
+                      }}
+                    />
+                  </div>
+                </section>
+              </div>
+            )}
           </section>
         )}
 
@@ -992,9 +1121,7 @@ export default function ModelApp() {
           <CoveragePage
             coverage={coverage}
             categories={categories}
-            onRefresh={() =>
-              loadCoverage().catch((error) => setNotice(error.message))
-            }
+            onRefresh={loadCoverage}
             onAssert={(row) => {
               const prior = data.assertions.find(
                 (assertion) =>
@@ -1985,43 +2112,73 @@ function ProductCatalog({
 }
 
 function CoveragePage({ coverage, categories, onRefresh, onAssert }) {
+  const [filter, setFilter] = useState("applicable");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      onRefresh({ page, status: filter, query });
+    }, query ? 250 : 0);
+    return () => window.clearTimeout(timer);
+  }, [page, filter, query]);
+
+  const updateFilter = (value) => {
+    setFilter(value);
+    setPage(1);
+  };
+  const updateQuery = (value) => {
+    setQuery(value);
+    setPage(1);
+  };
   return (
     <section className="content model-page">
       <div className="page-heading">
         <div>
           <h1>Compatibility coverage</h1>
           <p>
-            Relevant component pairs are generated from system roles. Missing
-            evidence stays visible as unverified.
+            Pair estimates use recorded compatibility, specification matches,
+            and cautious manufacturer or product-family signals. Confidence is
+            evidence strength, not a probability that the combination will work.
           </p>
         </div>
-        <button className="button button-quiet" onClick={onRefresh}>
+        <button className="button button-quiet" onClick={() => onRefresh({ page, status: filter, query })}>
           <RefreshCw size={15} />
           Refresh coverage
         </button>
       </div>
       <div className="coverage-summary">
         {[
-          "total",
-          "compatible",
-          "incompatible",
-          "conditional",
-          "unverified",
-        ].map((key) => (
+          ["total", "ALL PRODUCT PAIRS"],
+          ["applicable", "INTERACTING PAIRS"],
+          ["average_compatibility_score", "AVG. ADJUSTED SCORE"],
+          ["average_confidence", "AVG. CONFIDENCE"],
+          ["compatible", "SOURCED COMPATIBLE"],
+          ["incompatible", "SOURCED CONFLICTS"],
+          ["conditional", "CONDITIONAL"],
+          ["unverified", "UNVERIFIED"],
+          ["not_applicable", "NO DECLARED INTERACTION"],
+        ].map(([key, label]) => (
           <div className={`coverage-stat coverage-${key}`} key={key}>
-            <small>
-              {key === "total" ? "CANDIDATE PAIRS" : key.toUpperCase()}
-            </small>
-            <b>{coverage?.summary?.[key] ?? "—"}</b>
+            <small>{label}</small>
+            <b>
+              {coverage?.summary?.[key] == null
+                ? "—"
+                : ["average_compatibility_score", "average_confidence"].includes(key)
+                  ? `${coverage.summary[key]}%`
+                  : coverage.summary[key]}
+            </b>
           </div>
         ))}
       </div>
       <div className="coverage-note">
         <CircleHelp size={16} />
         <span>
-          Only declared interaction categories are enumerated; unrelated
-          products aren’t crossed together. Add product models to expand
-          relevant coverage.
+          Weak signals can move an estimate slightly from neutral (50), with
+          the reason shown for each pair. Manufacturer match alone is only a
+          small signal, not proof of compatibility. Non-interacting pairs are
+          excluded from assembly verdicts, and strong sourced conflicts
+          override a favorable average.
         </span>
       </div>
       <div className="catalog-panel coverage-panel">
@@ -2029,9 +2186,33 @@ function CoveragePage({ coverage, categories, onRefresh, onAssert }) {
           <div>
             <h2>Applicable product pairs</h2>
             <p>
-              {coverage?.summary?.assessed || 0} of{" "}
-              {coverage?.summary?.total || 0} have a sourced outcome.
+              {coverage?.summary?.applicable || 0} interacting pairs ·{" "}
+              {coverage?.total_filtered ?? 0} shown in this result set
             </p>
+          </div>
+          <div className="coverage-filters">
+            <label className="sr-only" htmlFor="coverage-search">Search product pairs</label>
+            <input
+              id="coverage-search"
+              className="text-input"
+              value={query}
+              onChange={(event) => updateQuery(event.target.value)}
+              placeholder="Search products or manufacturers"
+            />
+            <select
+              className="select-input"
+              value={filter}
+              onChange={(event) => updateFilter(event.target.value)}
+              aria-label="Filter compatibility pairs"
+            >
+              <option value="applicable">Interacting pairs</option>
+              <option value="compatible">Sourced compatible</option>
+              <option value="incompatible">Sourced incompatible</option>
+              <option value="conditional">Conditional</option>
+              <option value="unverified">Unverified</option>
+              <option value="not_applicable">No declared interaction</option>
+              <option value="all">All pairs</option>
+            </select>
           </div>
         </div>
         <div className="product-table-wrap">
@@ -2041,6 +2222,7 @@ function CoveragePage({ coverage, categories, onRefresh, onAssert }) {
                 <th>Component A</th>
                 <th>Component B</th>
                 <th>Result</th>
+                <th>Score / confidence</th>
                 <th>Evidence / finding</th>
                 <th></th>
               </tr>
@@ -2058,6 +2240,11 @@ function CoveragePage({ coverage, categories, onRefresh, onAssert }) {
                   </td>
                   <td>
                     <StatusPill status={row.status} />
+                    <small>{row.estimate_label}</small>
+                  </td>
+                  <td>
+                    {row.adjusted_score == null ? "—" : `${row.adjusted_score}%`}
+                    <small>{row.confidence_score == null ? "Excluded from average" : `${row.confidence_score}% confidence`}</small>
                   </td>
                   <td>
                     <span>
@@ -2089,10 +2276,16 @@ function CoveragePage({ coverage, categories, onRefresh, onAssert }) {
           </table>
           {!coverage?.rows?.length && (
             <div className="no-items">
-              No applicable pairs yet. Add products in interacting categories to
-              generate the coverage list.
+              No pairs match this filter. Add products to expand the compatibility inventory.
             </div>
           )}
+        </div>
+        <div className="coverage-pagination">
+          <span>Page {coverage?.page || page} of {coverage?.pages || 1}</span>
+          <div>
+            <button className="button button-small" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</button>
+            <button className="button button-small" disabled={page >= (coverage?.pages || 1)} onClick={() => setPage((current) => current + 1)}>Next</button>
+          </div>
         </div>
       </div>
     </section>
@@ -2372,6 +2565,8 @@ function CheckResult({ result, onCoverage }) {
     incompatible: "Incompatible",
     conditional: "Conditional",
     unverified: "Not yet verified",
+    likely_compatible: "Likely compatible · estimate",
+    likely_incompatible: "Likely incompatible · estimate",
   };
   return (
     <div className={`assembly-result-content status-${result.status}`}>
@@ -2385,8 +2580,24 @@ function CheckResult({ result, onCoverage }) {
         )}
       </div>
       <div className="result-kicker">ASSEMBLY REPORT</div>
-      <h3>{labels[result.status]}</h3>
+      <h3>{labels[result.status] || "Not yet verified"}</h3>
       <p>{result.message || result.assertion?.rationale}</p>
+      {result.estimate?.score != null && (
+        <div className="assembly-estimate">
+          <div className="assembly-estimate-head">
+            <div><small>CONFIDENCE-ADJUSTED ASSEMBLY SCORE</small><strong>{result.estimate.score}%</strong></div>
+            <div><small>EVIDENCE CONFIDENCE</small><strong>{result.estimate.confidence}%</strong></div>
+          </div>
+          <div className="estimate-meter" aria-label={`Compatibility estimate ${result.estimate.score} percent`}>
+            <span style={{ width: `${result.estimate.score}%` }} />
+          </div>
+          <p>
+            {result.estimate.checks_in_average} checks averaged
+            {result.estimate.applicable_pairs > 0 && ` · ${result.estimate.applicable_pairs} applicable product pairs`}
+          </p>
+          <small>{result.estimate.method}</small>
+        </div>
+      )}
       {result.findings?.map((finding, index) => (
         <div
           className="finding-card"
