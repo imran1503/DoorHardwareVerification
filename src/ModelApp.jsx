@@ -3087,7 +3087,7 @@ function CoveragePage({ coverage, categories, onRefresh, onAssert }) {
                 <th>Result</th>
                 <th>Assessment / confidence</th>
                 <th>Evidence / finding</th>
-                <th></th>
+                <th>Review</th>
               </tr>
             </thead>
             <tbody>

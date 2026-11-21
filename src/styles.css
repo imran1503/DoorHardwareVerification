@@ -2473,13 +2473,14 @@ html[data-theme="dark"] .research-card .research-components {
 }
 .product-table th {
   text-align: left;
-  padding: 11px 13px;
+  padding: 13px 13px;
   background: #fafbfa;
-  color: #8a9690;
-  font: 9px var(--mono);
-  letter-spacing: 0.45px;
+  color: #596761;
+  font: 600 10px/1.3 var(--body-font);
+  letter-spacing: 0.025em;
   text-transform: uppercase;
   border-bottom: 1px solid #e9eeeb;
+  vertical-align: middle;
 }
 .product-table td {
   padding: 12px 13px;
@@ -2567,9 +2568,29 @@ html[data-theme="dark"] .research-card .research-components {
 }
 .coverage-table {
   min-width: 1040px;
+  table-layout: fixed;
+}
+.coverage-panel .catalog-toolbar {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5e9e7;
+}
+.coverage-table th:nth-child(1),
+.coverage-table td:nth-child(1) { width: 14%; }
+.coverage-table th:nth-child(2),
+.coverage-table td:nth-child(2) { width: 14%; }
+.coverage-table th:nth-child(3),
+.coverage-table td:nth-child(3) { width: 10%; }
+.coverage-table th:nth-child(4),
+.coverage-table td:nth-child(4) { width: 15%; }
+.coverage-table th:nth-child(5),
+.coverage-table td:nth-child(5) { width: 36%; }
+.coverage-table th:nth-child(6),
+.coverage-table td:nth-child(6) {
+  width: 11%;
+  white-space: nowrap;
 }
 .coverage-table td:nth-child(5) {
-  max-width: 400px;
   line-height: 1.45;
 }
 .coverage-table td:nth-child(5) .source-link {
@@ -2989,6 +3010,9 @@ html[data-theme="dark"] .product-table th {
   background: #242424;
   border-color: #373737;
   color: #aaa;
+}
+html[data-theme="dark"] .coverage-panel .catalog-toolbar {
+  border-bottom-color: #373737;
 }
 html[data-theme="dark"] .product-table td {
   border-color: #373737;
