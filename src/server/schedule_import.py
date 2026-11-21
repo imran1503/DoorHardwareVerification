@@ -31,6 +31,15 @@ SET_REFERENCE = re.compile(r"\b(?:hardware\s+)?(?:set|group)\b\s*(?:no\.?|#)?\s*
 HEADING_NUMBER = re.compile(r"^\s*HEADING\s*#\s*:\s*([A-Z0-9][A-Z0-9.\-]{0,15})\b", re.IGNORECASE)
 DETAIL_DOOR_HEADER = re.compile(r"\bQTY\b.*\bSET\b.*\bDOOR\s+No\b.*\bDOOR\s+DESCRIPTION\b", re.IGNORECASE)
 DETAIL_COLUMN_SPLIT = re.compile(r"\s{2,}")
+INSTALLATION_COMPONENT_PREFIX = re.compile(
+    r"^\s*\d+(?:\.\d+)?\s+(?P<code>[A-Z0-9][A-Z0-9.\-/]{1,15})\s+INSTALLATION\s+COMPONENT\s*:\s*(?P<description>.+?)\s*$",
+    re.IGNORECASE,
+)
+INSTALLATION_COMPONENT_SUFFIX = re.compile(
+    r"^\s*INSTALLATION\s+COMPONENT\s*:\s*(?P<description>.*?)\s*(?P<code>\d{3,})\s+\d+(?:\.\d+)?\s*$",
+    re.IGNORECASE,
+)
+UNQUANTIFIED_COMPONENT_ITEM = re.compile(r"^\s*LOCALIZED\s+POWER\s+SUPPLY\b.*$", re.IGNORECASE)
 DOOR_ID = re.compile(r"^[A-Z0-9][A-Z0-9.\-/]{0,24}$", re.IGNORECASE)
 DOOR_HAND = re.compile(r"^(?:LHR|RHR|LH|RH|LHR/RHR|RHR/LHR|SLIDING)$", re.IGNORECASE)
 DOOR_INDEX_TITLE = re.compile(r"\bDOOR\s+INDEX\b", re.IGNORECASE)
@@ -108,11 +117,14 @@ def extract_schedule(pdf_bytes):
     seen_doors = set()
     seen_index_numbers = set()
     document_has_door_index = False
+    last_heading_set = None
+    last_detail_door = None
 
     for page_number, page in enumerate(reader.pages, 1):
         text = page.extract_text(extraction_mode="layout") or page.extract_text() or ""
         pages.append({"page_number": page_number, "text": text})
         current_set = None
+        active_component_code = None
         door_table_active = False
         is_door_index = bool(DOOR_INDEX_TITLE.search(text[:1200]))
         document_has_door_index = document_has_door_index or is_door_index
@@ -159,12 +171,48 @@ def extract_schedule(pdf_bytes):
                 current_set = heading_number.group(1).strip().rstrip(".")
                 sets.setdefault(current_set, {"set_code": current_set, "description": "", "start_page": page_number, "end_page": page_number, "notes": ""})
                 sets[current_set]["end_page"] = page_number
+                last_heading_set = current_set
+                active_component_code = None
                 continue
             heading = SET_HEADING.match(line)
             if heading:
                 current_set = heading.group(1).strip().rstrip(".")
                 sets.setdefault(current_set, {"set_code": current_set, "description": heading.group(2).strip(), "start_page": page_number, "end_page": page_number, "notes": ""})
                 sets[current_set]["end_page"] = page_number
+                last_heading_set = current_set
+                active_component_code = None
+                continue
+
+            component = INSTALLATION_COMPONENT_PREFIX.match(line) or INSTALLATION_COMPONENT_SUFFIX.match(line)
+            if component:
+                # Installation-component rows can continue a door's hardware
+                # heading on the next PDF page without repeating HEADING #.
+                component_set = current_set
+                if component_set is None and last_detail_door:
+                    prior_set = last_detail_door.get("heading_number", "")
+                    if prior_set and prior_set.casefold() == (last_heading_set or "").casefold():
+                        component_set = last_heading_set
+                component_code = component.group("code").strip().rstrip(".")
+                component_description = component.group("description").strip()
+                set_row = sets.get(component_set) if component_set else None
+                if set_row:
+                    current_set = component_set
+                    note = f"Installation component {component_code}: {component_description}"
+                    if note not in set_row["notes"]:
+                        set_row["notes"] = "; ".join(part for part in (set_row["notes"], note) if part)
+                    if not set_row["description"]:
+                        set_row["description"] = note
+                    elif note not in set_row["description"]:
+                        set_row["description"] = f"{set_row['description']}; {note}"
+                    set_row["end_page"] = page_number
+                    active_component_code = component_code
+                else:
+                    issues.append({
+                        "code": "installation_component_without_door_context",
+                        "severity": "warning",
+                        "message": f"Installation component {component_code} was found, but the preceding door/set context could not be confirmed. Review its assignment against the source page.",
+                        "page": page_number,
+                    })
                 continue
 
             if current_set:
@@ -183,14 +231,40 @@ def extract_schedule(pdf_bytes):
                 })
                 continue
 
+            if current_set and active_component_code and UNQUANTIFIED_COMPONENT_ITEM.match(line):
+                items.append({
+                    "set_code": current_set,
+                    "source_row_number": page_number * 10000 + line_number,
+                    "quantity": None,
+                    "sku": "",
+                    "units": "",
+                    "description": line.strip(),
+                    "raw": raw_line,
+                    "page": page_number,
+                })
+                continue
+
             # When an index exists, it is authoritative for the project door
             # roster. Hardware pages supply set contents, not extra door rows.
             if document_has_door_index:
+                if door_table_active:
+                    detail_door = parse_detail_door_row(raw_line)
+                    if detail_door:
+                        last_detail_door = {
+                            **detail_door,
+                            "heading_number": current_set or "",
+                            "page": page_number,
+                        }
                 continue
 
             if door_table_active:
                 parsed_door = parse_detail_door_row(raw_line)
                 if parsed_door:
+                    last_detail_door = {
+                        **parsed_door,
+                        "heading_number": current_set or "",
+                        "page": page_number,
+                    }
                     door_number = parsed_door["door_number"] or f"Unknown · page {page_number} row {line_number}"
                     key = (door_number.casefold(), page_number)
                     if parsed_door["door_number"] and parsed_door["door_number"].casefold() in seen_index_numbers:
@@ -223,6 +297,11 @@ def extract_schedule(pdf_bytes):
                     continue
                 seen_doors.add(key)
                 set_match = SET_REFERENCE.search(description)
+                last_detail_door = {
+                    "door_number": door_number,
+                    "heading_number": set_match.group(1) if set_match else current_set or "",
+                    "page": page_number,
+                }
                 doors.append({
                     "door_number": door_number,
                     "door_number_status": "known",

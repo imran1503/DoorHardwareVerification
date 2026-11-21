@@ -371,14 +371,14 @@ class Handler(BaseHTTPRequestHandler):
             (project_code, name, str(data.get("client_name", "")).strip(), str(data.get("site_address", "")).strip()),
         )
         project_id = project_cur.lastrowid
-        metadata = {"page_count": len(extracted["pages"]), "original_filename": filename, "parser": "door-index-aware-reviewed-v2"}
+        metadata = {"page_count": len(extracted["pages"]), "original_filename": filename, "parser": "door-index-aware-reviewed-v3"}
         source_cur = db.execute(
             "INSERT INTO evidence_sources(project_id,source_type,title,local_path,document_sha256,revision_label,metadata_json) VALUES (?,'hardware_schedule',?,?,?,?,?)",
             (project_id, filename, relative_path.as_posix(), digest, revision_label, json.dumps(metadata)),
         )
         source_id = source_cur.lastrowid
         revision_cur = db.execute(
-            "INSERT INTO schedule_revisions(project_id,schedule_number,revision_label,evidence_source_id,status,parser_name,parser_version,notes) VALUES (?,?,?,?,'under_review','door_index_aware','2',?)",
+            "INSERT INTO schedule_revisions(project_id,schedule_number,revision_label,evidence_source_id,status,parser_name,parser_version,notes) VALUES (?,?,?,?,'under_review','door_index_aware','3',?)",
             (project_id, schedule_number, revision_label, source_id, "Text extraction is heuristic. Review the original PDF, extracted rows, and flagged fields before relying on results."),
         )
         revision_id = revision_cur.lastrowid
@@ -390,7 +390,7 @@ class Handler(BaseHTTPRequestHandler):
         for set_row in extracted["sets"]:
             cur = db.execute(
                 "INSERT INTO hardware_sets(schedule_revision_id,set_code,description,source_start_page,source_end_page,source_notes,raw_source_text) VALUES (?,?,?,?,?,?,?)",
-                (revision_id, set_row["set_code"], set_row["description"], set_row["start_page"], set_row["end_page"], set_row["notes"], set_row["description"]),
+                (revision_id, set_row["set_code"], set_row["description"], set_row["start_page"], set_row["end_page"], set_row["notes"], set_row["notes"] or set_row["description"]),
             )
             set_ids[set_row["set_code"].casefold()] = cur.lastrowid
         door_ids = {}
