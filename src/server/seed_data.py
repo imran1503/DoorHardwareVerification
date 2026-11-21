@@ -16,6 +16,21 @@ def seed_manufacturer_product_data(db):
                 (fact["name"], json.dumps(fact["specifications"]), fact["source_title"], fact["source_url"], fact["notes"], row["id"]),
             )
 
+    # Add newly verified ED100 interfaces to existing manufacturer-sourced
+    # records without replacing other specification fields or user edits.
+    ed100_fact = MANUFACTURER_PRODUCT_FACTS[("dormakaba", "ED100")]
+    ed100 = db.execute("SELECT id,specifications,source_url FROM products WHERE category='automatic_operator' AND manufacturer='dormakaba' AND model='ED100' AND source_title=?", (ed100_fact["source_title"],)).fetchone()
+    if ed100:
+        specifications = json.loads(ed100["specifications"] or "{}")
+        changed = False
+        for key in ("line_power", "activation_inputs", "accessory_power_output", "locking_device_interface"):
+            if key not in specifications:
+                specifications[key] = ed100_fact["specifications"][key]
+                changed = True
+        local_source = ed100["source_url"].startswith("https://my.dormakaba.com/medias/")
+        if changed or local_source:
+            db.execute("UPDATE products SET specifications=?,source_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", (json.dumps(specifications), ed100_fact["source_url"] if local_source else ed100["source_url"], ed100["id"]))
+
     norton_source = MANUFACTURER_PRODUCT_FACTS[("Norton Rixson", "5800 ADAEZ Pro")]
     norton_base_specs = norton_source["specifications"]
     for model, name, side, hardwire_kit in NORTON_5800_VARIANTS:
@@ -183,6 +198,62 @@ def seed_manufacturer_product_data(db):
         db.execute(
             "INSERT INTO products(category,manufacturer,model,name,specifications,source_title,source_url,evidence_status,notes) VALUES ('power_supply','Camden Controls',?,?,?,?,?,'manufacturer_document',?) ON CONFLICT(category,manufacturer,model) DO UPDATE SET name=excluded.name,specifications=excluded.specifications,source_title=excluded.source_title,source_url=excluded.source_url,evidence_status='manufacturer_document',notes=excluded.notes,updated_at=CURRENT_TIMESTAMP",
             (model, name, json.dumps(specs), source_title, source_url, notes),
+        )
+
+    # Exact Dormakaba models found in the Belleville schedule's electrified sets.
+    dormakaba_schedule_products = [
+        (
+            "exit_device", "626QED111-MLR", "Dormakaba QED111 rim exit device with MLR, 626 satin chrome",
+            {
+                "record_scope": "exact_configuration", "manufacturer_family": "QED 100 Series",
+                "device_type": "rim_exit_device", "function": "rim_hex_dog", "finish": "626 satin chrome",
+                "electrification": "MLR motorized latch retraction", "power_input": {
+                    "voltage": "24VDC +/- 10%", "max_inrush_a": 1, "max_holding_current_a": 0.4,
+                    "supply_type": "filtered_and_regulated", "polarity": "non_polarized",
+                },
+                "conductors": {"power_wires": 2, "optional_feedback_wires": 2},
+                "wire_run_by_gauge_ft": {"22AWG": 70, "20AWG": 110, "18AWG": 180, "16AWG": 280, "14AWG": 450, "12AWG": 720},
+                "standards": ["ANSI/BHMA A156.3 Grade 1"],
+                "opening_limits": {"nominal_device_length_in": 48, "field_sizable_min_door_width_in": 36, "standard_door_thickness_in": 1.75, "min_rim_stile_width_in": 4.25},
+                "fire_rating_note": "QED111 is the hex-dog function; the schedule does not identify the QED113 fire-rated function. Verify the exact door/device listing before use on a rated opening.",
+            },
+            "Dormakaba QED 100 Series Installation Instructions and Specifications",
+            "/evidence/dormakaba/QED100_MLR_Installation_Instructions.pdf",
+            "The Belleville schedule lists 626QED111-MLR at 1219 mm. Manufacturer data specifies the QED 100 MLR power, wire-run limits, sizing, and prep. The linked file is the exact MLR instruction sheet; do not infer a fire-rated configuration from QED111.",
+        ),
+        (
+            "hinge", "628661HD-CE-12EA", "Dormakaba 661HD concealed electric hinge, CE-12, 12-wire Easy Access",
+            {
+                "record_scope": "exact_configuration", "canonical_model": "661HD CE-12",
+                "hinge_type": "full_mortise_aluminum_geared_continuous", "power_transfer_type": "concealed_electric_hinge",
+                "conductor_count": 12, "conductor_gauge_awg": 22, "handing": "non_handed_standard_size",
+                "nominal_door_height_in": 84, "actual_hinge_length_in": 83,
+                "wire_transfer_note": "CE hinges conduct current through the hinge to electric locks, exit devices, or hold-open devices regardless of door position.",
+                "opening_limits": {"door_thickness_in": 1.75, "supports_180_degree_opening": True},
+            },
+            "Dormakaba 661HD CE-12 12-Wire Easy Access Hinge Template",
+            "/evidence/dormakaba/661HD_CE12_Hinge_Template.pdf",
+            "The schedule's 2108 mm dimension matches the manufacturer's standard 83 in hinge length. The schedule's RHR label is retained as source text; the standard 661HD CE-12 template describes the hinge as non-handed. Verify the exact catalog suffix, handing requirement if cut, conductor assignment and electrical load.",
+        ),
+    ]
+    for category, model, name, specs, source_title, source_url, notes in dormakaba_schedule_products:
+        db.execute(
+            "INSERT INTO products(category,manufacturer,model,name,specifications,source_title,source_url,evidence_status,notes) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(category,manufacturer,model) DO UPDATE SET name=excluded.name,specifications=excluded.specifications,source_title=excluded.source_title,source_url=excluded.source_url,evidence_status='manufacturer_document',notes=excluded.notes,updated_at=CURRENT_TIMESTAMP",
+            (category, "dormakaba", model, name, json.dumps(specs), source_title, source_url, "manufacturer_document", notes),
+        )
+
+    qed = db.execute("SELECT id FROM products WHERE category='exit_device' AND manufacturer='dormakaba' AND model='626QED111-MLR'").fetchone()
+    electric_hinge = db.execute("SELECT id FROM products WHERE category='hinge' AND manufacturer='dormakaba' AND model='628661HD-CE-12EA'").fetchone()
+    if qed and electric_hinge:
+        product_ids = json.dumps(sorted([qed["id"], electric_hinge["id"]]), separators=(",", ":"))
+        db.execute(
+            "INSERT OR IGNORE INTO compatibility_assertions(product_ids,outcome,conditions,rationale,source_title,source_url,evidence_status) VALUES (?,'compatible','{}',?,?,?,'manufacturer_document')",
+            (
+                product_ids,
+                "The QED 100 MLR instructions route the exit-device conductors through a power transfer device. Dormakaba identifies CE electric hinges as power-transfer components for exit devices, and the scheduled 661HD CE-12 provides 12 conductors. This supports the exact hinge-to-exit-device wiring interface only: use filtered, regulated 24VDC, keep the 22 AWG run within the QED limit (70 ft maximum), and verify the assigned conductors, load, door preparation, and applicable listing.",
+                "Dormakaba QED 100 MLR Instructions and 661HD CE-12 Hinge Template",
+                "/evidence/dormakaba/QED100_MLR_Installation_Instructions.pdf",
+            ),
         )
 
     # Keep corrected source-scoped seed facts in sync on repeat initialization.

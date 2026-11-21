@@ -37,8 +37,26 @@ class ApiTests(unittest.TestCase):
         with closing(database.connect()) as db:
             products = db.execute("SELECT count(*) FROM products WHERE active=1").fetchone()[0]
             kit = db.execute("SELECT id FROM products WHERE model='CX-WC17SLVR'").fetchone()
+            operator = db.execute("SELECT specifications FROM products WHERE category='automatic_operator' AND manufacturer='dormakaba' AND model='ED100'").fetchone()
         self.assertGreater(products, 0)
         self.assertIsNotNone(kit)
+        self.assertEqual(json.loads(operator["specifications"])["locking_device_interface"]["relay_contact_max_current_a"], 1)
+
+    def test_scheduled_dormakaba_mlr_exit_device_and_hinge_have_sourced_pair_result(self):
+        with closing(database.connect()) as db:
+            ids = [
+                db.execute("SELECT id FROM products WHERE category=? AND manufacturer='dormakaba' AND model=?", (category, model)).fetchone()["id"]
+                for category, model in (("exit_device", "626QED111-MLR"), ("hinge", "628661HD-CE-12EA"))
+            ]
+        harness = ResponseHarness()
+
+        Handler.check_assembly(harness, {"product_ids": ids})
+
+        status, result = harness.response
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "compatible")
+        assertion = next(finding for finding in result["findings"] if finding.get("status") == "compatible")
+        self.assertEqual(assertion["source_title"], "Dormakaba QED 100 MLR Instructions and 661HD CE-12 Hinge Template")
 
     def test_documented_kit_assertion_is_compatible(self):
         with closing(database.connect()) as db:
