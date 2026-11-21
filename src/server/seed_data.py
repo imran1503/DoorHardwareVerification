@@ -68,18 +68,18 @@ def seed_manufacturer_product_data(db):
             "supply_options": ["12VDC", "24VDC"], "peak_current_ma": 45,
             "output_contact_type": "dry_contact", "contact_rating_a": 1,
             "contact_rating_vdc": 30,
-        }, "CX-WC17SLVR Restroom Control Kit Manual", "https://www.camdencontrols.com/pipelines/resource/11374_WC17SLVR_Restroom_Control_Manual_R2.pdf", "Exact switch model listed as a CX-WC17SLVR kit component; use the manual's specific wiring and mode setup."),
+        }, "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)", "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=1", "Exact switch model listed as a CX-WC17SLVR kit component; use the manual's specific wiring and mode setup."),
         ("activation_device", "CM-221", "CM-221 built-in hands-free switch", {
             "record_scope": "exact_model", "activation_interface": "hands_free_infrared",
             "adjustable_range_in": [2, 8], "adjustable_delay_seconds": [0.5, 20],
             "included_in_kit": "CX-WC17SLVR",
-        }, "CX-WC17SLVR Restroom Control Kit Manual", "https://www.camdencontrols.com/pipelines/resource/11374_WC17SLVR_Restroom_Control_Manual_R2.pdf", "The current kit manual states this hands-free switch is built into the CX-WC17SLVR kit; review its separate instructions for setup."),
+        }, "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)", "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=1", "The current kit manual states this hands-free switch is built into the CX-WC17SLVR kit; review its separate instructions for setup."),
         ("washroom_control", "CX-WC17SLVR", "CX-WC17SLVR Restroom Control Kit", {
             "record_scope": "exact_kit", "included_models": ["CX-33", "CM-8536VR x3", "CM-221"],
             "included_components": ["surface mounting contact", "occupied/locked signs"],
             "documented_modes": [7, 8], "controller_model": "CX-33",
             "switch_model": "CM-8536VR",
-        }, "CX-WC17SLVR Restroom Control Kit Manual", "https://www.camdencontrols.com/pipelines/resource/11374_WC17SLVR_Restroom_Control_Manual_R2.pdf", "Use the exact included components and the documented mode/wiring diagram; field operator and locking hardware must be selected separately."),
+        }, "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)", "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=1", "Use the exact included components and the documented mode/wiring diagram; field operator and locking hardware must be selected separately."),
         ("washroom_control", "CX-WC16-PS-M1", "CX-WC16-PS-M1 Restroom Control Kit with Power Supply", {
             "record_scope": "exact_kit", "controller_model": "60-40E035",
             "supply_input_options": ["12VAC", "24VAC", "12VDC", "24VDC"],
@@ -174,8 +174,8 @@ def seed_manufacturer_product_data(db):
                 "output_voltage": "24VAC",
                 "output_va": 40,
             },
-            "CX-WC17SLVR Series Restroom Kit Installation Instructions",
-            "https://www.camdencontrols.com/pipelines/resource/1021_WC17SLVR_Restroom_Control_Manual_R2.pdf",
+            "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)",
+            "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=8",
             "Camden lists the CX-TRX-4024 as a required 40VA, 24VAC transformer for the CX-WC17SLVR and CX-WEC10K2 equipment package; it is the documented AC input source for the CX-PS13.",
         ),
     ]
@@ -285,9 +285,12 @@ def seed_manufacturer_product_data(db):
         if not left or not right:
             continue
         product_ids = json.dumps(sorted([left["id"], right["id"]]), separators=(",", ":"))
+        uses_wc16_manual = "CX-WC16-PS-M1" in {model_a, model_b} or "CX-WEC10-K2" in {model_a, model_b}
+        source_title = "Camden restroom kit manuals" if uses_wc16_manual else "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)"
+        source_url = "https://www.camdencontrols.com/pipelines/resource/1007_WC16_PS_M1_Restroom_Control_Manual.pdf" if uses_wc16_manual else "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=1"
         db.execute(
             "INSERT OR IGNORE INTO compatibility_assertions(product_ids,outcome,conditions,rationale,source_title,source_url,evidence_status) VALUES (?, 'compatible', '{}', ?, ?, ?, 'manufacturer_document')",
-            (product_ids, rationale, "Camden restroom kit manuals", "https://www.camdencontrols.com/pipelines/resource/1007_WC16_PS_M1_Restroom_Control_Manual.pdf" if "CX-WC16-PS-M1" in {model_a, model_b} or "CX-WEC10-K2" in {model_a, model_b} else "https://www.camdencontrols.com/pipelines/resource/11374_WC17SLVR_Restroom_Control_Manual_R2.pdf"),
+            (product_ids, rationale, source_title, source_url),
         )
 
     # Whole-kit and integrated-system assertions are stored as product tuples,
@@ -301,8 +304,21 @@ def seed_manufacturer_product_data(db):
                 ("activation_device", "CM-221"),
             ],
             "The CX-WC17SLVR manual documents this tuple as one kit: CX-33 logic relay, three CM-8536VR column switches, and built-in CM-221 hands-free switch. The model list stores CM-8536VR once; the documented quantity is three. Follow the selected mode and wiring diagram; this does not establish fit with an unlisted door, operator, or lock.",
-            "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions",
-            "https://www.camdencontrols.com/pipelines/resource/a131360_WC17SLVR_Restroom_Control_Manual_R2.pdf",
+            "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)",
+            "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=1",
+        ),
+        (
+            [
+                ("washroom_control", "CX-WC17SLVR"),
+                ("controller", "CX-33"),
+                ("activation_device", "CM-8536VR"),
+                ("activation_device", "CM-221"),
+                ("power_supply", "CX-PS13"),
+                ("power_supply", "CX-TRX-4024"),
+            ],
+            "The CX-WC17SLVR manual documents the four-device restroom-control kit and identifies the CX-PS13 and CX-TRX-4024 as the additional required power components. This six-model tuple covers the documented control-and-power package; follow its wiring and selected operating mode. It does not establish fit with an unlisted door, strike, or operator.",
+            "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)",
+            "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=8",
         ),
         (
             [

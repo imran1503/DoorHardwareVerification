@@ -5,7 +5,7 @@ import sqlite3
 from urllib.parse import parse_qs, urlparse
 
 from .catalog import CATEGORIES, EVIDENCE_STATUSES, FIELDS, INTERACTION_PAIRS, MODEL_SPECIFIC_FIELDS, PRODUCT_CATEGORIES
-from .compatibility import assembly_estimate, coverage_rows, coverage_summary, pair_estimate, pair_evaluation, pair_is_applicable, power_path_findings
+from .compatibility import assembly_estimate, assembly_subset_checks, coverage_rows, coverage_summary, pair_estimate, pair_evaluation, pair_is_applicable, power_path_findings
 from .database import (
     assertion_dict, compatibility_rule_dict, connect, item_dict, normalized_ids,
     product_dict, rule_dict, trusted_evidence, trusted_product_record,
@@ -61,7 +61,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     filtered = [row for row in rows if row.get("status") == status_filter]
                 if search:
-                    filtered = [row for row in filtered if search in " ".join((row["product_a"].get("name", ""), row["product_a"].get("manufacturer", ""), row["product_a"].get("model", ""), row["product_b"].get("name", ""), row["product_b"].get("manufacturer", ""), row["product_b"].get("model", ""))).casefold()]
+                    filtered = [row for row in filtered if search in " ".join((row["product_a"].get("name", ""), row["product_a"].get("manufacturer", ""), row["product_a"].get("model", ""), row["product_b"].get("name", ""), row["product_b"].get("manufacturer", ""), row["product_b"].get("model", ""), *(product.get("model", "") for evidence in row.get("assembly_evidence", []) for product in evidence.get("products", [])))).casefold()]
                 try:
                     page = max(1, int(query.get("page", ["1"])[0]))
                     page_size = min(100, max(1, int(query.get("page_size", ["50"])[0])))
@@ -376,7 +376,38 @@ class Handler(BaseHTTPRequestHandler):
                 if candidate_ids == selected_ids and not exact_applies:
                     exact_applies = True
                     assertion = candidate
-            if not exact_applies:
+            if exact_applies:
+                # An exact whole-assembly tuple subsumes its smaller documented
+                # tuples. Keep the report focused on the assertion for the
+                # complete selected set instead of counting the subset twice.
+                tuple_assertions = [assertion]
+                findings = [finding for finding in findings if finding.get("finding_type") != "assembly_tuple"]
+                findings.append({
+                    "status": assertion["outcome"],
+                    "finding_type": "assembly_tuple",
+                    "rationale": assertion["rationale"],
+                    "source_title": assertion["source_title"],
+                    "source_url": assertion["source_url"],
+                    "product_ids": assertion["product_ids"],
+                })
+            subset_checks = assembly_subset_checks(db, products, context) if len(products) > 2 else []
+            subset_conflicts = [
+                check for check in subset_checks
+                if check["subset_size"] < len(products)
+                and check["status"] == "incompatible"
+                and trusted_evidence(check["evidence_status"])
+            ]
+            for check in subset_conflicts:
+                findings.append({
+                    "status": check["status"],
+                    "finding_type": "subset_assertion_conflict",
+                    "rationale": check["rationale"],
+                    "source_title": check["source_title"],
+                    "source_url": check["source_url"],
+                    "product_ids": check["product_ids"],
+                    "evidence_status": check["evidence_status"],
+                })
+            if len(products) == 2:
                 for left_index, product_a in enumerate(products):
                     for product_b in products[left_index + 1:]:
                         if not pair_is_applicable(product_a, product_b, db):
@@ -385,7 +416,8 @@ class Handler(BaseHTTPRequestHandler):
                         findings.append({"product_a": product_a, "product_b": product_b, **evaluation})
                         pair_estimates.append(pair_estimate(db, product_a, product_b, context))
             findings.extend(opening_fit_findings(products, opening))
-            findings.extend(power_path_findings(products))
+            if not exact_applies:
+                findings.extend(power_path_findings(products))
             if len(products) == 1 and not findings:
                 findings.append({"status": "unverified", "product_a": products[0], "rationale": "No opening-fit constraint is documented for this selected product category."})
             if not all(trusted_evidence(product["evidence_status"]) for product in products):
@@ -402,11 +434,18 @@ class Handler(BaseHTTPRequestHandler):
                 finding for finding in findings
                 if (finding.get("product_a") and not finding.get("product_b"))
                 or finding.get("finding_type") == "power_path"
+                or finding.get("finding_type") == "subset_assertion_conflict"
             ]
-            estimate = assembly_estimate(pair_estimates, assembly_level_findings, tuple_assertions)
+            estimate_assertions = tuple_assertions if exact_applies else []
+            estimate = assembly_estimate(pair_estimates, assembly_level_findings, estimate_assertions)
+            if len(products) > 2 and not exact_applies and status == "compatible":
+                status = "unverified"
+            if len(products) > 2 and not exact_applies and estimate.get("verdict") in {"compatible", "likely_compatible"}:
+                estimate["verdict"] = "unverified"
+                estimate["message"] = "No exact assertion covers the complete selected assembly; evidence for smaller subsets does not prove the full combination."
             if estimate.get("score") is not None:
                 status = estimate["verdict"]
-            return self.send_json({"status": status, "message": estimate["message"] if estimate.get("score") is not None else messages[status], "estimate": estimate, "assertion": assertion if exact_applies else None, "products": products, "findings": findings})
+            return self.send_json({"status": status, "message": estimate["message"] if estimate.get("score") is not None else messages[status], "estimate": estimate, "assertion": assertion if exact_applies else None, "products": products, "findings": findings, "subset_checks": subset_checks})
 
     def do_PUT(self):
         path = urlparse(self.path).path

@@ -53,7 +53,7 @@ const emptyRule = {
 const emptyAssertion = {
   product_ids: [],
   outcome: "compatible",
-  conditions: "{}",
+  conditions: {},
   rationale: "",
   source_title: "",
   source_url: "",
@@ -74,10 +74,10 @@ const emptyOpening = {
 };
 const exampleScenarios = [
   {
-    id: "wc17-four-device-tuple",
-    title: "Four-model restroom kit assembly",
+    id: "wc17-six-model-tuple",
+    title: "Six-model WC17 control + power assembly",
     description:
-      "Checks the four-model CX-WC17SLVR tuple with Camden's specified CX-PS13 supply and CX-TRX-4024 transformer.",
+      "Loads the exact six-model CX-WC17SLVR tuple with Camden's specified CX-PS13 supply and CX-TRX-4024 transformer.",
     expected: "Documented compatible",
     kind: "compatible",
     products: [
@@ -473,6 +473,26 @@ export default function ModelApp() {
   const categories = data?.productCategories || {};
   const productList = data?.products || [];
   const activeProducts = productList.filter((product) => product.active);
+  const evidenceSources = useMemo(() => {
+    const records = [
+      ...productList,
+      ...(data?.assertions || []),
+      ...(data?.compatibilityRules || []),
+      ...(data?.researchNotes || []),
+    ];
+    const unique = new Map();
+    records.forEach((record) => {
+      if (record?.source_url) {
+        unique.set(record.source_url, {
+          source_title: record.source_title || record.title || record.source_url,
+          source_url: record.source_url,
+        });
+      }
+    });
+    return [...unique.values()].sort((a, b) =>
+      a.source_title.localeCompare(b.source_title),
+    );
+  }, [productList, data?.assertions, data?.compatibilityRules, data?.researchNotes]);
   const visibleProducts = useMemo(
     () =>
       activeProducts.filter((product) =>
@@ -760,7 +780,7 @@ export default function ModelApp() {
     try {
       const payload = {
         ...assertionForm,
-        conditions: JSON.parse(assertionForm.conditions || "{}"),
+        conditions: assertionForm.conditions || {},
       };
       await api(
         assertionForm.id
@@ -827,6 +847,20 @@ export default function ModelApp() {
   const clearCheckResult = () => {
     setCheckResult(null);
     setReportExpanded(false);
+  };
+  const openSubsetAssertion = (productIds) => {
+    const ids = [...productIds].sort((a, b) => a - b);
+    const prior = (data?.assertions || []).find(
+      (assertion) =>
+        assertion.product_ids.length === ids.length &&
+        [...assertion.product_ids].sort((a, b) => a - b).every((id, index) => id === ids[index]),
+    );
+    setAssertionForm(
+      prior
+        ? { ...prior, conditions: prior.conditions || {} }
+        : { ...emptyAssertion, product_ids: ids },
+    );
+    setShowAssertion(true);
   };
   const runCheck = async () => {
     setChecking(true);
@@ -1170,6 +1204,7 @@ export default function ModelApp() {
                     <CheckResult
                       result={checkResult}
                       onCoverage={() => setPage("coverage")}
+                      onAssertSubset={openSubsetAssertion}
                     />
                   )}
                 </section>
@@ -1178,10 +1213,11 @@ export default function ModelApp() {
             <div className="footnote">
               <ShieldCheck size={15} />
               <span>
-                The assembly score combines all applicable interactions among
-                selected products with opening-fit and shared-power checks.
-                Verify the complete wiring and operating sequence against
-                manufacturer documentation.
+                Two-product checks use the pair evaluator. Larger assemblies
+                use exact subset assertions and show missing subsets as
+                evidence gaps, alongside opening-fit and shared-power checks.
+                Verify wiring and operating mode against the manufacturer
+                documentation.
               </span>
             </div>
             {reportExpanded && checkResult && (
@@ -1219,6 +1255,7 @@ export default function ModelApp() {
                     <CheckResult
                       result={checkResult}
                       expanded
+                      onAssertSubset={openSubsetAssertion}
                       onCoverage={() => {
                         setReportExpanded(false);
                         setPage("coverage");
@@ -1277,7 +1314,7 @@ export default function ModelApp() {
                 prior
                   ? {
                       ...prior,
-                      conditions: JSON.stringify(prior.conditions, null, 2),
+                      conditions: prior.conditions || {},
                     }
                   : {
                       ...emptyAssertion,
@@ -1311,7 +1348,7 @@ export default function ModelApp() {
             onEditAssertion={(assertion) => {
               setAssertionForm({
                 ...assertion,
-                conditions: JSON.stringify(assertion.conditions, null, 2),
+                conditions: assertion.conditions || {},
               });
               setShowAssertion(true);
             }}
@@ -1458,6 +1495,7 @@ export default function ModelApp() {
             form={assertionForm}
             setForm={setAssertionForm}
             products={activeProducts}
+            sources={evidenceSources}
             statuses={data.evidenceStatuses}
             onSubmit={saveAssertion}
           />
@@ -1984,34 +2022,112 @@ function RuleForm({ form, setForm, categories, statuses, onSubmit }) {
   );
 }
 
-function AssertionForm({ form, setForm, products, statuses, onSubmit }) {
-  const update = (key, value) =>
-    setForm((current) => ({ ...current, [key]: value }));
-  const toggleProduct = (id) =>
-    setForm((current) => ({
-      ...current,
-      product_ids: current.product_ids.includes(id)
-        ? current.product_ids.filter((value) => value !== id)
-        : [...current.product_ids, id],
-    }));
+function AssertionForm({ form, setForm, products, sources, statuses, onSubmit }) {
+  const [slots, setSlots] = useState(() => [
+    ...(form.product_ids || []),
+    ...Array(Math.max(0, 2 - (form.product_ids || []).length)).fill(null),
+  ]);
+  const [queries, setQueries] = useState({});
+  const [sourceQuery, setSourceQuery] = useState("");
+  const [conditionRows, setConditionRows] = useState(() =>
+    Object.entries(form.conditions || {}).map(([key, value]) => [key, String(value)]),
+  );
+  useEffect(() => {
+    const selected = form.product_ids || [];
+    setSlots((current) => {
+      const next = [...selected, ...Array(Math.max(0, 2 - selected.length)).fill(null)];
+      return next.length < current.length ? next : next.slice(0, current.length);
+    });
+  }, [form.id, form.product_ids]);
+  useEffect(() => {
+    setConditionRows(
+      Object.entries(form.conditions || {}).map(([key, value]) => [key, String(value)]),
+    );
+  }, [form.id]);
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const updateConditions = (rows) => {
+    setConditionRows(rows);
+    const conditions = {};
+    rows.forEach(([key, value]) => {
+      const name = key.trim();
+      if (!name || value === "") return;
+      const normalized = value.trim();
+      conditions[name] = normalized === "true"
+        ? true
+        : normalized === "false"
+          ? false
+          : normalized !== "" && Number.isFinite(Number(normalized))
+            ? Number(normalized)
+            : value;
+    });
+    update("conditions", conditions);
+  };
+  const selectProduct = (index, id) => {
+    const next = [...slots];
+    next[index] = id;
+    setSlots(next);
+    setQueries((current) => ({ ...current, [index]: "" }));
+    update("product_ids", next.filter(Boolean));
+  };
+  const removeSlot = (index) => {
+    const next = slots.filter((_, slotIndex) => slotIndex !== index);
+    setSlots(next);
+    setQueries({});
+    update("product_ids", next.filter(Boolean));
+  };
+  const matchedSources = sources.filter((source) =>
+    `${source.source_title} ${source.source_url}`.toLowerCase().includes(sourceQuery.toLowerCase()),
+  ).slice(0, 6);
   return (
     <form className="model-form" onSubmit={onSubmit}>
       <div className="field">
         <span>Products in this assertion</span>
-        <div className="assertion-product-list">
-          {products.map((product) => (
-            <label key={product.id}>
-              <input
-                type="checkbox"
-                checked={form.product_ids.includes(product.id)}
-                onChange={() => toggleProduct(product.id)}
-              />
-              <span>
-                {displayName(product)} <small>· {product.category_label}</small>
-              </span>
-            </label>
-          ))}
+        <div className="assertion-product-picker">
+          {slots.map((id, index) => {
+            const selected = products.find((product) => product.id === id);
+            const query = queries[index] || "";
+            const matches = query.trim()
+              ? products.filter((product) =>
+                  !slots.includes(product.id) &&
+                  `${displayName(product)} ${product.name} ${product.category_label || product.category}`
+                    .toLowerCase().includes(query.toLowerCase()),
+                ).slice(0, 7)
+              : [];
+            return (
+              <div className="assertion-product-slot" key={index}>
+                <label htmlFor={`assertion-product-${index}`}>Item {index + 1}</label>
+                {selected ? (
+                  <div className="assertion-selected-product">
+                    <span><b>{displayName(selected)}</b><small>{selected.category_label || selected.category}</small></span>
+                    <button type="button" className="icon-button" aria-label={`Remove ${displayName(selected)}`} onClick={() => selectProduct(index, null)}><X size={15} /></button>
+                  </div>
+                ) : (
+                  <div className="assertion-search-wrap">
+                    <Search size={15} />
+                    <input
+                      id={`assertion-product-${index}`}
+                      value={query}
+                      onChange={(event) => setQueries((current) => ({ ...current, [index]: event.target.value }))}
+                      placeholder="Search by manufacturer or model"
+                      autoComplete="off"
+                    />
+                    {matches.length > 0 && (
+                      <div className="assertion-search-results">
+                        {matches.map((product) => (
+                          <button key={product.id} type="button" onClick={() => selectProduct(index, product.id)}>
+                            <b>{displayName(product)}</b><small>{product.category_label || product.category}</small>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {index >= 2 && <button type="button" className="text-button assertion-remove-slot" onClick={() => removeSlot(index)}>Remove item</button>}
+              </div>
+            );
+          })}
         </div>
+        <button type="button" className="text-button assertion-add-item" onClick={() => setSlots((current) => [...current, null])}><Plus size={15} /> Add another item</button>
       </div>
       <div className="modal-fields assertion-fields">
         <Field label="Outcome">
@@ -2035,29 +2151,28 @@ function AssertionForm({ form, setForm, products, statuses, onSubmit }) {
             ])}
           />
         </Field>
-        <Field label="Source title">
-          <input
-            value={form.source_title}
-            onChange={(event) => update("source_title", event.target.value)}
-          />
+        <Field label="Find an evidence source" wide>
+          <div className="assertion-source-picker">
+            <div className="assertion-search-wrap"><Search size={15} /><input value={sourceQuery} onChange={(event) => setSourceQuery(event.target.value)} placeholder="Search saved manuals and sources" autoComplete="off" /></div>
+            {sourceQuery && matchedSources.length > 0 && <div className="assertion-search-results assertion-source-results">{matchedSources.map((source) => <button type="button" key={source.source_url} onClick={() => { update("source_title", source.source_title); update("source_url", source.source_url); setSourceQuery(""); }}><b>{source.source_title}</b><small>{source.source_url}</small></button>)}</div>}
+            {form.source_title && <small className="assertion-source-selected">Selected: {form.source_title}</small>}
+          </div>
         </Field>
-        <Field label="Source URL" wide>
-          <input
-            type="url"
-            value={form.source_url}
-            required={form.evidence_status !== "research_lead"}
-            onChange={(event) => update("source_url", event.target.value)}
-            placeholder="https://…"
-          />
-        </Field>
-        <Field label="Conditions (JSON)" wide>
-          <textarea
-            className="json-input"
-            value={form.conditions}
-            onChange={(event) => update("conditions", event.target.value)}
-            placeholder="{}"
-          />
-        </Field>
+        <details className="assertion-manual-source field-wide">
+          <summary>Or enter a source link</summary>
+          <div className="modal-fields assertion-fields">
+            <Field label="Source title"><input value={form.source_title} onChange={(event) => update("source_title", event.target.value)} /></Field>
+            <Field label="Source link" wide><input type="url" value={form.source_url} required={form.evidence_status !== "research_lead"} onChange={(event) => update("source_url", event.target.value)} placeholder="Paste a manufacturer manual or product page link" /></Field>
+          </div>
+        </details>
+        <div className="field field-wide">
+          <span>Conditions (optional)</span>
+          <small>Describe when this result applies, such as operating mode or voltage.</small>
+          <div className="assertion-condition-rows">
+            {conditionRows.map(([key, value], index) => <div className="assertion-condition-row" key={index}><input aria-label="Condition name" value={key} onChange={(event) => { const next = [...conditionRows]; next[index] = [event.target.value, value]; updateConditions(next); }} placeholder="Condition (for example, operating mode)" /><input aria-label="Condition value" value={value} onChange={(event) => { const next = [...conditionRows]; next[index] = [key, event.target.value]; updateConditions(next); }} placeholder="Value (for example, mode 7)" /><button type="button" className="icon-button" aria-label="Remove condition" onClick={() => updateConditions(conditionRows.filter((_, row) => row !== index))}><X size={15} /></button></div>)}
+          </div>
+          <button type="button" className="text-button assertion-add-item" onClick={() => updateConditions([...conditionRows, ["", ""]])}><Plus size={15} /> Add condition</button>
+        </div>
         <Field label="Rationale" wide>
           <textarea
             required
@@ -2415,6 +2530,24 @@ function CoveragePage({ coverage, categories, onRefresh, onAssert }) {
                       {row.rationale ||
                         "No sourced assertion or applicable rule."}
                     </span>
+                    {row.assembly_evidence?.map((evidence, index) => (
+                      <div className="coverage-assembly-evidence" key={`${evidence.source_url}-${index}`}>
+                        <strong>Related tuple evidence · {evidence.products.map((product) => product.model).join(" + ")}</strong>
+                        <small>
+                          Tuple-level documentation; this source does not independently approve the displayed pair.
+                        </small>
+                        {evidence.source_url && (
+                          <a
+                            className="source-link"
+                            href={evidence.source_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {evidence.source_title || "Open assembly source"} <ArrowUpRight size={12} />
+                          </a>
+                        )}
+                      </div>
+                    ))}
                     {row.source_url && (
                       <a
                         className="source-link"
@@ -2723,10 +2856,16 @@ function ResearchPage({
   );
 }
 
-function CheckResult({ result, onCoverage, expanded = false }) {
+function CheckResult({ result, onCoverage, onAssertSubset, expanded = false }) {
   const assessmentRef = useRef(null);
   const [assessmentJumpVisible, setAssessmentJumpVisible] = useState(true);
   const findings = result.findings || [];
+  const subsetChecks = Array.isArray(result.subset_checks) ? result.subset_checks : [];
+  const subsetChecksBySize = subsetChecks.reduce((groups, check) => {
+    (groups[check.subset_size] ||= []).push(check);
+    return groups;
+  }, {});
+  const exactSubsetCount = subsetChecks.filter((check) => check.has_exact_assertion).length;
   const conflictFindings = findings.filter(
     (finding) => finding.status === "incompatible",
   );
@@ -2769,6 +2908,38 @@ function CheckResult({ result, onCoverage, expanded = false }) {
   }, [needsAssessmentShortcut]);
   const scrollToAssessment = () =>
     assessmentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const renderEvidenceSources = (finding) => {
+    const candidates = [
+      ...(Array.isArray(finding.sources) ? finding.sources : []),
+      ...(finding.source_url
+        ? [{ source_title: finding.source_title, source_url: finding.source_url }]
+        : []),
+    ];
+    const sources = [...new Map(
+      candidates
+        .filter((source) => source?.source_url)
+        .map((source) => [source.source_url, source]),
+    ).values()];
+    if (!sources.length) return null;
+    return (
+      <div className="finding-evidence">
+        <strong>Evidence sources</strong>
+        <div className="finding-evidence-links">
+          {sources.map((source) => (
+            <a
+              className="source-link"
+              href={source.source_url}
+              target="_blank"
+              rel="noreferrer"
+              key={source.source_url}
+            >
+              {source.source_title || "Open source document"} <ArrowUpRight size={12} />
+            </a>
+          ))}
+        </div>
+      </div>
+    );
+  };
   const renderFindingCard = (finding, index) => (
     <div
       className="finding-card"
@@ -2788,16 +2959,7 @@ function CheckResult({ result, onCoverage, expanded = false }) {
         )}
       </div>
       <p>{finding.rationale}</p>
-      {finding.source_url && (
-        <a
-          className="source-link"
-          href={finding.source_url}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {finding.source_title || "Evidence source"} <ArrowUpRight size={12} />
-        </a>
-      )}
+      {renderEvidenceSources(finding)}
     </div>
   );
   const labels = {
@@ -2830,11 +2992,7 @@ function CheckResult({ result, onCoverage, expanded = false }) {
               <div className="conflict-reason" key={`conflict-${index}`}>
                 <strong>{title}</strong>
                 <p>{finding.rationale}</p>
-                {finding.source_url && (
-                  <a className="source-link" href={finding.source_url} target="_blank" rel="noreferrer">
-                    {finding.source_title || "Evidence source"} <ArrowUpRight size={12} />
-                  </a>
-                )}
+                {renderEvidenceSources(finding)}
               </div>
             );
           })}
@@ -2881,8 +3039,9 @@ function CheckResult({ result, onCoverage, expanded = false }) {
             <span style={{ width: `${result.estimate.score}%` }} />
           </div>
           <p>
-            {result.estimate.checks_in_average} checks averaged
+            {result.estimate.checks_in_average} assessment factors averaged
             {result.estimate.applicable_pairs > 0 && ` · ${result.estimate.applicable_pairs} applicable product pairs`}
+            {subsetChecks.length > 0 && ` · ${subsetChecks.length} combinations listed (${exactSubsetCount} with exact assertions, ${subsetChecks.length - exactSubsetCount} without an exact record)`}
           </p>
           <small>{result.estimate.method}</small>
         </div>
@@ -2891,6 +3050,53 @@ function CheckResult({ result, onCoverage, expanded = false }) {
         <section className="report-findings report-working-findings">
           <h4>Why it works</h4>
           {workingFindings.map(renderFindingCard)}
+          {subsetChecks.length > 0 && (
+            <details className="subset-check-breakdown">
+              <summary>
+                <strong>Combination breakdown</strong>
+                <span>{subsetChecks.length} groups of 2+ selected models</span>
+              </summary>
+              <p>
+                Every subset of two or more selected models is listed. A result appears only when an exact assertion exists for that subset; a missing assertion is an evidence gap, not proof of incompatibility. Pair rules and inferred pair signals are not used inside a multi-model assembly.
+              </p>
+              {Object.entries(subsetChecksBySize).map(([size, checks]) => (
+                <section className="subset-check-group" key={size}>
+                  <h4>
+                    <span>{size}-model groups</span>
+                    <small>{checks.length}</small>
+                  </h4>
+                  <div className="subset-check-list">
+                    {checks.map((check) => (
+                      <article className="subset-check-card" key={check.product_ids.join("-")}>
+                        <div className="subset-check-title">
+                          <StatusPill status={check.status} />
+                        </div>
+                        <div className="subset-check-products">
+                          {check.products.map((product) => (
+                            <span key={product.id}>{product.model}</span>
+                          ))}
+                        </div>
+                        <p>{check.rationale}</p>
+                        {check.has_exact_assertion && (
+                          <small>
+                            Assertion {check.assertion_id} · {check.evidence_status.replaceAll("_", " ")}
+                          </small>
+                        )}
+                        {renderEvidenceSources(check)}
+                        <button
+                          className="button button-small"
+                          type="button"
+                          onClick={() => onAssertSubset?.(check.product_ids)}
+                        >
+                          {check.has_exact_assertion ? "Edit subset assertion" : "Record subset outcome"}
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </details>
+          )}
         </section>
       )}
       <button className="text-link" onClick={onCoverage}>
