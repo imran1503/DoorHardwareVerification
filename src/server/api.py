@@ -415,7 +415,10 @@ class Handler(BaseHTTPRequestHandler):
                         evaluation = pair_evaluation(db, product_a, product_b, context)
                         findings.append({"product_a": product_a, "product_b": product_b, **evaluation})
                         pair_estimates.append(pair_estimate(db, product_a, product_b, context))
-            findings.extend(opening_fit_findings(products, opening))
+            findings.extend(
+                {**finding, "finding_type": finding.get("finding_type", "opening_fit")}
+                for finding in opening_fit_findings(products, opening)
+            )
             if not exact_applies:
                 findings.extend(power_path_findings(products))
             if len(products) == 1 and not findings:
@@ -437,7 +440,18 @@ class Handler(BaseHTTPRequestHandler):
                 or finding.get("finding_type") == "subset_assertion_conflict"
             ]
             estimate_assertions = tuple_assertions if exact_applies else []
-            estimate = assembly_estimate(pair_estimates, assembly_level_findings, estimate_assertions)
+            if exact_applies:
+                # The exact whole-group assertion is the primary assembly
+                # result. Do not dilute it with unresolved opening-fit data;
+                # independently documented conflicts still take precedence.
+                independent_conflicts = [
+                    finding for finding in findings
+                    if finding.get("status") == "incompatible"
+                    and finding.get("finding_type") != "assembly_tuple"
+                ]
+                estimate = assembly_estimate([], independent_conflicts, estimate_assertions)
+            else:
+                estimate = assembly_estimate(pair_estimates, assembly_level_findings, estimate_assertions)
             if len(products) > 2 and not exact_applies and status == "compatible":
                 status = "unverified"
             if len(products) > 2 and not exact_applies and estimate.get("verdict") in {"compatible", "likely_compatible"}:

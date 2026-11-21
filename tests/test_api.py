@@ -85,6 +85,47 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(full_tuple["source_url"], "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=8")
         self.assertTrue(any(not check["has_exact_assertion"] for check in result["subset_checks"]))
 
+    def test_exact_assembly_assertion_is_not_diluted_by_unverified_opening_fit(self):
+        models = ("CX-WC17SLVR", "CX-33", "CM-8536VR", "CM-221", "CX-PS13", "CX-TRX-4024")
+        with closing(database.connect()) as db:
+            ids = [
+                db.execute("SELECT id FROM products WHERE model=? ORDER BY id LIMIT 1", (model,)).fetchone()["id"]
+                for model in models
+            ]
+            products = [database.product_dict(db.execute("SELECT * FROM products WHERE id=?", (product_id,)).fetchone()) for product_id in ids]
+        harness = ResponseHarness()
+
+        with patch("src.server.api.opening_fit_findings", return_value=[{
+            "status": "unverified", "product_a": products[0], "rationale": "No exact opening limits are recorded."
+        }]):
+            Handler.check_assembly(harness, {"product_ids": ids, "opening": {"width_in": 36}})
+
+        status, result = harness.response
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "compatible")
+        self.assertEqual(result["estimate"]["checks_in_average"], 1)
+        self.assertTrue(any(finding.get("finding_type") == "opening_fit" and finding["status"] == "unverified" for finding in result["findings"]))
+
+    def test_exact_assembly_assertion_keeps_an_independent_documented_conflict(self):
+        models = ("CX-WC17SLVR", "CX-33", "CM-8536VR", "CM-221", "CX-PS13", "CX-TRX-4024")
+        with closing(database.connect()) as db:
+            ids = [
+                db.execute("SELECT id FROM products WHERE model=? ORDER BY id LIMIT 1", (model,)).fetchone()["id"]
+                for model in models
+            ]
+            product = database.product_dict(db.execute("SELECT * FROM products WHERE id=?", (ids[0],)).fetchone())
+        harness = ResponseHarness()
+
+        with patch("src.server.api.opening_fit_findings", return_value=[{
+            "status": "incompatible", "product_a": product, "rationale": "The opening exceeds the documented limit."
+        }]):
+            Handler.check_assembly(harness, {"product_ids": ids, "opening": {"width_in": 50}})
+
+        status, result = harness.response
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "incompatible")
+        self.assertTrue(any(finding.get("finding_type") == "opening_fit" and finding["status"] == "incompatible" for finding in result["findings"]))
+
     def test_subset_count_uses_power_set_minus_empty_and_singletons(self):
         with closing(database.connect()) as db:
             products = [database.product_dict(row) for row in db.execute("SELECT * FROM products WHERE active=1 ORDER BY id LIMIT 8")]
