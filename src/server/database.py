@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .catalog import CATEGORIES, EVIDENCE_STATUSES, PRODUCT_CATEGORIES, OPERATOR_GUIDE_TITLE, OPERATOR_GUIDE_URL, OPERATOR_PRODUCTS, SEED_ITEMS, SEED_RESEARCH_NOTES, SEED_RULES
 from .seed_data import seed_manufacturer_product_data
+from .belleville_research import seed_belleville_set_1_research
 
 ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = ROOT / "doorhardware.db"
@@ -37,6 +38,7 @@ def initialize():
             [(brand, model, name, json.dumps(specs), OPERATOR_GUIDE_TITLE, OPERATOR_GUIDE_URL, "Candidate identified in a buying guide; confirm exact model and specifications against manufacturer documentation.") for brand, model, name, specs in OPERATOR_PRODUCTS],
         )
         seed_manufacturer_product_data(db)
+        seed_belleville_set_1_research(db)
         for category, names in SEED_ITEMS.items():
             db.executemany(
                 "INSERT OR IGNORE INTO items(category,name,notes) VALUES (?,?,?)",
