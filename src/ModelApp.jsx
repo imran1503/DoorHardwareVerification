@@ -396,6 +396,7 @@ export default function ModelApp() {
   const [scheduleFile, setScheduleFile] = useState(null);
   const [projectForm, setProjectForm] = useState({ name: "", project_code: "", revision_label: "" });
   const [matchQueries, setMatchQueries] = useState({});
+  const [editingMatchItemId, setEditingMatchItemId] = useState(null);
   const [manualDoorForm, setManualDoorForm] = useState(null);
   const [doorNumberForm, setDoorNumberForm] = useState(null);
   const [manualSetForm, setManualSetForm] = useState(null);
@@ -1043,14 +1044,17 @@ export default function ModelApp() {
       if (fileInput) fileInput.value = "";
     }
   };
-  const saveScheduleMatch = async (itemId, productId) => {
+  const saveScheduleMatch = async (itemId, productId, reviewStatus = "confirmed") => {
     try {
       await api("/api/scheduled-items/matches", {
         method: "POST",
-        body: JSON.stringify({ scheduled_item_id: itemId, product_id: productId, review_status: "confirmed" }),
+        body: JSON.stringify({ scheduled_item_id: itemId, product_id: productId, review_status: reviewStatus }),
       });
       await loadProject(projectData.project.id);
-      setNotice("Catalog match confirmed for this schedule line.");
+      setEditingMatchItemId(null);
+      setNotice(reviewStatus === "confirmed"
+        ? "Catalog match confirmed for this schedule line."
+        : "Confirmation removed. The catalog match remains an unconfirmed suggestion.");
     } catch (error) {
       setNotice(error.message);
     }
@@ -1925,10 +1929,11 @@ export default function ModelApp() {
                       const confirmed = item.matches.find((match) => match.review_status === "confirmed");
                       const query = matchQueries[item.id] || "";
                       const matches = query ? activeProducts.filter((product) => `${displayName(product)} ${product.name} ${product.category_label}`.toLowerCase().includes(query.toLowerCase())).slice(0, 5) : [];
-                      return <article className="scheduled-line-card" key={item.id}><div className="scheduled-line-main"><div><span className="scheduled-line-quantity">{item.quantity_for_heading ?? "—"} {item.units}</span>{item.sku && <span className="scheduled-line-sku">SKU {item.sku}</span>}</div><p>{item.product_text || item.description_text}</p><small>Source PDF page {item.source_page}</small></div><div className="scheduled-line-match">{confirmed ? <div className="confirmed-match"><Check size={15} /><div><b>{displayName(confirmed.product)}</b><small>Confirmed catalog match</small></div><button className="text-link-button" onClick={() => setMatchQueries({ ...matchQueries, [item.id]: " " })}>Change</button></div> : <>
-                        {item.matches.filter((match) => match.review_status !== "rejected").map((match) => <button className="candidate-match" key={match.id} onClick={() => saveScheduleMatch(item.id, match.product_id)}><span>Suggested match · verify</span><b>{displayName(match.product)}</b><small>Confirm this catalog match</small></button>)}
+                      return <article className="scheduled-line-card" key={item.id}><div className="scheduled-line-main"><div><span className="scheduled-line-quantity">{item.quantity_for_heading ?? "—"} {item.units}</span>{item.sku && <span className="scheduled-line-sku">SKU {item.sku}</span>}</div><p>{item.product_text || item.description_text}</p><small>Source PDF page {item.source_page}</small></div><div className="scheduled-line-match">{confirmed && editingMatchItemId !== item.id ? <div className="confirmed-match"><Check size={15} /><div><b>{displayName(confirmed.product)}</b><small>Confirmed catalog match</small></div><div className="confirmed-match-actions"><button className="text-link-button" onClick={() => { setEditingMatchItemId(item.id); setMatchQueries({ ...matchQueries, [item.id]: "" }); }}>Change</button><button className="text-link-button" onClick={() => saveScheduleMatch(item.id, confirmed.product_id, "candidate")}>Undo</button></div></div> : <>
+                        {item.matches.filter((match) => match.review_status !== "rejected" && match.review_status !== "confirmed").map((match) => <button className="candidate-match" key={match.id} onClick={() => saveScheduleMatch(item.id, match.product_id)}><span>Suggested match · verify</span><b>{displayName(match.product)}</b><small>Confirm this catalog match</small></button>)}
                         <label className="catalog-match-search"><Search size={14} /><input value={query} onChange={(event) => setMatchQueries({ ...matchQueries, [item.id]: event.target.value })} placeholder="Search catalog by model" /></label>
                         {matches.map((product) => <button className="catalog-match-option" key={product.id} onClick={() => saveScheduleMatch(item.id, product.id)}>{displayName(product)} <span>Confirm</span></button>)}
+                        {confirmed && editingMatchItemId === item.id && <button className="text-link-button catalog-match-cancel" onClick={() => setEditingMatchItemId(null)}>Keep current match</button>}
                       </>}</div></article>;
                     }) : <p className="muted-small empty-items">No item rows were parsed. Use Add item under Hardware sets after verifying the source page.</p>}
                   </section>) : <div className="project-empty"><span>No hardware set is assigned to this door. Review the schedule page or add the assignment manually.</span></div>}
