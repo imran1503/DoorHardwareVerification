@@ -278,7 +278,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "Verification run not found."}, 404)
         doors = []
         for row in db.execute(
-            "SELECT v.*,d.door_number,d.heading_number,d.description,d.source_page FROM verification_run_doors v "
+            "SELECT v.*,d.door_number,d.door_number_status,d.heading_number,d.description,d.source_page FROM verification_run_doors v "
             "JOIN scheduled_doors d ON d.id=v.scheduled_door_id WHERE v.verification_run_id=? ORDER BY d.door_number,d.id", (run_id,)
         ):
             value = dict(row)
@@ -286,6 +286,30 @@ class Handler(BaseHTTPRequestHandler):
             value["result"] = json.loads(value.pop("result_json"))
             doors.append(value)
         return self.send_json({"run": {**dict(run), "summary": json.loads(run["summary_json"])}, "doors": doors})
+
+    def delete_project_records(self, db, project_id):
+        project = db.execute("SELECT id,name FROM projects WHERE id=?", (project_id,)).fetchone()
+        if not project:
+            return {"error": "Project not found."}, 404, []
+        sources = [dict(row) for row in db.execute(
+            "SELECT id,local_path FROM evidence_sources WHERE project_id=? AND source_type='hardware_schedule'", (project_id,)
+        )]
+        db.execute("DELETE FROM projects WHERE id=?", (project_id,))
+        files_to_remove = []
+        for source in sources:
+            linked = db.execute(
+                "SELECT (SELECT COUNT(*) FROM product_evidence WHERE evidence_source_id=?) + "
+                "(SELECT COUNT(*) FROM product_match_evidence WHERE evidence_source_id=?)",
+                (source["id"], source["id"]),
+            ).fetchone()[0]
+            if linked:
+                continue
+            db.execute("DELETE FROM evidence_sources WHERE id=?", (source["id"],))
+            if source["local_path"] and not db.execute("SELECT 1 FROM evidence_sources WHERE local_path=? LIMIT 1", (source["local_path"],)).fetchone():
+                candidate = (SCHEDULE_UPLOAD_DIR / Path(source["local_path"]).name).resolve()
+                if candidate.is_relative_to(SCHEDULE_UPLOAD_DIR.resolve()) and candidate.is_file():
+                    files_to_remove.append(candidate)
+        return {"deleted": True, "project_name": project["name"]}, 200, files_to_remove
 
     def get_schedule_pages(self, db, revision_id):
         query = parse_qs(urlparse(self.path).query)
@@ -347,14 +371,14 @@ class Handler(BaseHTTPRequestHandler):
             (project_code, name, str(data.get("client_name", "")).strip(), str(data.get("site_address", "")).strip()),
         )
         project_id = project_cur.lastrowid
-        metadata = {"page_count": len(extracted["pages"]), "original_filename": filename, "parser": "text-first-reviewed-v1"}
+        metadata = {"page_count": len(extracted["pages"]), "original_filename": filename, "parser": "door-index-aware-reviewed-v2"}
         source_cur = db.execute(
             "INSERT INTO evidence_sources(project_id,source_type,title,local_path,document_sha256,revision_label,metadata_json) VALUES (?,'hardware_schedule',?,?,?,?,?)",
             (project_id, filename, relative_path.as_posix(), digest, revision_label, json.dumps(metadata)),
         )
         source_id = source_cur.lastrowid
         revision_cur = db.execute(
-            "INSERT INTO schedule_revisions(project_id,schedule_number,revision_label,evidence_source_id,status,parser_name,parser_version,notes) VALUES (?,?,?,?,'under_review','generic_pdf_text','1',?)",
+            "INSERT INTO schedule_revisions(project_id,schedule_number,revision_label,evidence_source_id,status,parser_name,parser_version,notes) VALUES (?,?,?,?,'under_review','door_index_aware','2',?)",
             (project_id, schedule_number, revision_label, source_id, "Text extraction is heuristic. Review the original PDF, extracted rows, and flagged fields before relying on results."),
         )
         revision_id = revision_cur.lastrowid
@@ -372,8 +396,8 @@ class Handler(BaseHTTPRequestHandler):
         door_ids = {}
         for door in extracted["doors"]:
             cursor = db.execute(
-                "INSERT OR IGNORE INTO scheduled_doors(schedule_revision_id,source_row_number,door_number,heading_number,description,hand,raw_source_text,source_page) VALUES (?,?,?,?,?,?,?,?)",
-                (revision_id, door["source_row_number"], door["door_number"], door["heading_number"], door["description"], "", door["raw"], door["page"]),
+                "INSERT OR IGNORE INTO scheduled_doors(schedule_revision_id,source_row_number,door_number,door_number_status,heading_number,description,hand,raw_source_text,source_page) VALUES (?,?,?,?,?,?,?,?,?)",
+                (revision_id, door["source_row_number"], door["door_number"], door.get("door_number_status", "known"), door["heading_number"], door["description"], door.get("hand", ""), door["raw"], door["page"]),
             )
             door_id = cursor.lastrowid
             if not door_id:
@@ -425,19 +449,40 @@ class Handler(BaseHTTPRequestHandler):
         if not revision:
             return self.send_json({"error": "Import a schedule before adding doors."}, 404)
         door_number = str(data.get("door_number", "")).strip()
-        if not door_number:
+        number_status = data.get("door_number_status", "known")
+        if number_status not in {"known", "unknown"}:
+            return self.send_json({"error": "Choose whether the door number is known or unknown."}, 400)
+        row_number = -int(db.execute("SELECT COUNT(*)+1 FROM scheduled_doors WHERE schedule_revision_id=?", (revision["id"],)).fetchone()[0])
+        if number_status == "unknown":
+            door_number = f"Unknown · manual {abs(row_number)}"
+        elif not door_number:
             return self.send_json({"error": "Enter a door number."}, 400)
         set_code = str(data.get("heading_number", "")).strip()
         set_row = db.execute("SELECT id FROM hardware_sets WHERE schedule_revision_id=? AND set_code=? ORDER BY occurrence_number LIMIT 1", (revision["id"], set_code)).fetchone() if set_code else None
         if set_code and not set_row:
             return self.send_json({"error": "Create or choose a hardware set before assigning it to a door."}, 400)
         cur = db.execute(
-            "INSERT INTO scheduled_doors(schedule_revision_id,source_row_number,door_number,heading_number,description,hand,raw_source_text,source_page) VALUES (?,?,?,?,?,?,?,?)",
-            (revision["id"], -int(db.execute("SELECT COUNT(*)+1 FROM scheduled_doors WHERE schedule_revision_id=?", (revision["id"],)).fetchone()[0]), door_number, set_code, str(data.get("description", "")).strip(), str(data.get("hand", "")).strip(), "Manually added during schedule review.", 1),
+            "INSERT INTO scheduled_doors(schedule_revision_id,source_row_number,door_number,door_number_status,heading_number,description,hand,raw_source_text,source_page) VALUES (?,?,?,?,?,?,?,?,?)",
+            (revision["id"], row_number, door_number, number_status, set_code, str(data.get("description", "")).strip(), str(data.get("hand", "")).strip(), "Manually added during schedule review.", 1),
         )
         if set_row:
             db.execute("INSERT INTO door_set_assignments(scheduled_door_id,hardware_set_id,raw_source_text) VALUES (?,?,?)", (cur.lastrowid, set_row["id"], "Manually assigned during schedule review."))
         return self.send_json({"id": cur.lastrowid, "door_number": door_number}, 201)
+
+    def update_scheduled_door_number(self, db, door_id, data):
+        door = db.execute("SELECT id,door_number,door_number_status,source_page FROM scheduled_doors WHERE id=?", (door_id,)).fetchone()
+        if not door:
+            return self.send_json({"error": "Scheduled door not found."}, 404)
+        status = data.get("door_number_status", "known")
+        if status not in {"known", "unknown"}:
+            return self.send_json({"error": "Choose whether the door number is known or unknown."}, 400)
+        number = str(data.get("door_number", "")).strip()
+        if status == "unknown":
+            number = f"Unknown · page {door['source_page']}"
+        elif not number:
+            return self.send_json({"error": "Enter the door number, or mark it unknown."}, 400)
+        db.execute("UPDATE scheduled_doors SET door_number=?,door_number_status=? WHERE id=?", (number, status, door_id))
+        return self.send_json({"id": door_id, "door_number": number, "door_number_status": status})
 
     def add_project_set(self, db, data):
         project_id = data.get("project_id")
@@ -857,6 +902,9 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         data = self.read_json()
         parts = path.strip("/").split("/")
+        if len(parts) == 3 and parts[0] == "api" and parts[1] == "scheduled-doors" and parts[2].isdigit():
+            with connect() as db:
+                return self.update_scheduled_door_number(db, int(parts[2]), data)
         if len(parts) == 3 and parts[0] == "api" and parts[1] == "products":
             with connect() as db:
                 try:
@@ -899,6 +947,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         parts = urlparse(self.path).path.strip("/").split("/")
+        if len(parts) == 3 and parts[0] == "api" and parts[1] == "projects" and parts[2].isdigit():
+            with connect() as db:
+                result, status, files_to_remove = self.delete_project_records(db, int(parts[2]))
+            for file_path in files_to_remove:
+                try:
+                    file_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            return self.send_json(result, status)
         if len(parts) == 3 and parts[0] == "api":
             if parts[1] == "products":
                 with connect() as db:

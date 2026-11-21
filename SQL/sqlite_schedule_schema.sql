@@ -74,6 +74,8 @@ CREATE TABLE IF NOT EXISTS scheduled_doors (
     schedule_revision_id INTEGER NOT NULL REFERENCES schedule_revisions(id) ON DELETE CASCADE,
     source_row_number INTEGER NOT NULL,
     door_number TEXT NOT NULL,
+    door_number_status TEXT NOT NULL DEFAULT 'known'
+        CHECK (door_number_status IN ('known', 'unknown')),
     heading_number TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
     passage_type TEXT NOT NULL DEFAULT '',

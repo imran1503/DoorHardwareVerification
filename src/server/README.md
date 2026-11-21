@@ -8,7 +8,7 @@ The SQLite schedule schema is in [`SQL/sqlite_schedule_schema.sql`](../../SQL/sq
 
 ## Step 6 schedule project workflow
 
-The website's **Projects** page accepts a hardware-schedule PDF, keeps the original file under the private ignored `data/schedules/` directory, and stores extracted page text, candidate doors, hardware sets, scheduled item rows, match candidates, and review flags in SQLite. The generic parser is text-first and heuristic. It preserves the source for review and never confirms catalog matches or compatibility automatically. Scanned or image-only schedules need visual/OCR review; extraction must be checked against the original schedule.
+The website's **Projects** page accepts a hardware-schedule PDF, keeps the original file under the private ignored `data/schedules/` directory, and stores extracted page text, candidate doors, hardware sets, scheduled item rows, match candidates, and review flags in SQLite. The parser uses an explicit Door Index when a schedule has one, reads the indexed door ID and heading/set columns, and falls back to conservative text-first patterns on other layouts. Rows with no confident ID can be marked unknown and reviewed together. It preserves source text and never confirms catalog matches or compatibility automatically. Scanned or image-only schedules need visual/OCR review; extraction must be checked against the original schedule.
 
 The project workspace supports door search and previous/next navigation, per-door hardware and source-page review, manual catalog matching, saved verification runs, and CSV/JSON exports. Run `pip install -r requirements.txt` to install the PDF text extraction dependency. Schedule files are served back through the local API and are not placed in `public/`.
 

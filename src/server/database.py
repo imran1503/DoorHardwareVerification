@@ -27,6 +27,9 @@ def initialize():
         db.execute("CREATE TABLE IF NOT EXISTS compatibility_rules (id INTEGER PRIMARY KEY, name TEXT NOT NULL, category_a TEXT NOT NULL, category_b TEXT NOT NULL, spec_a TEXT NOT NULL, comparison TEXT NOT NULL, spec_b TEXT NOT NULL, pass_outcome TEXT NOT NULL DEFAULT 'compatible', fail_outcome TEXT NOT NULL DEFAULT 'incompatible', rationale TEXT NOT NULL DEFAULT '', source_title TEXT NOT NULL DEFAULT '', source_url TEXT NOT NULL DEFAULT '', evidence_status TEXT NOT NULL DEFAULT 'research_lead', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
         db.execute("CREATE TABLE IF NOT EXISTS catalog_scrape_runs (id INTEGER PRIMARY KEY, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, source_results TEXT NOT NULL, products_added INTEGER NOT NULL DEFAULT 0, products_refreshed INTEGER NOT NULL DEFAULT 0, products_unchanged INTEGER NOT NULL DEFAULT 0)")
         db.executescript(SCHEDULE_SCHEMA_PATH.read_text(encoding="utf-8"))
+        door_columns = {row["name"] for row in db.execute("PRAGMA table_info(scheduled_doors)")}
+        if "door_number_status" not in door_columns:
+            db.execute("ALTER TABLE scheduled_doors ADD COLUMN door_number_status TEXT NOT NULL DEFAULT 'known' CHECK (door_number_status IN ('known', 'unknown'))")
         db.execute("CREATE INDEX IF NOT EXISTS idx_products_category ON products(category,active)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_assertions_status ON compatibility_assertions(evidence_status)")
         db.executemany(

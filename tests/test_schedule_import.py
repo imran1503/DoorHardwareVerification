@@ -13,6 +13,7 @@ from pypdf import PdfWriter
 
 from src.server import database
 from src.server.api import Handler
+from src.server.schedule_import import SET_HEADING, SET_REFERENCE, parse_detail_door_row, parse_door_index_row
 
 
 class ResponseHarness:
@@ -42,6 +43,37 @@ class ScheduleImportTests(unittest.TestCase):
         output = BytesIO()
         writer.write(output)
         return output.getvalue()
+
+    def test_set_heading_parser_does_not_treat_plural_table_header_as_set_s(self):
+        self.assertIsNone(SET_HEADING.match("SETS: FOR FURTHER INFO ACCESS AUTOMATIC-"))
+        self.assertIsNone(SET_REFERENCE.search("SETS: FOR FURTHER INFO ACCESS AUTOMATIC-"))
+        match = SET_HEADING.match("SET 7 - Exterior electrified opening")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(1), "7")
+
+    def test_detail_table_reads_door_number_column_not_quantity(self):
+        parsed = parse_detail_door_row("                         1       PR DRS                   100A                  EXTERIOR FROM VESTIBULE 100                                                                                                                 LHR/RHR")
+        self.assertEqual(parsed["door_number"], "100A")
+        self.assertEqual(parsed["door_number_status"], "known")
+        self.assertEqual(parsed["description"], "EXTERIOR FROM VESTIBULE 100")
+        self.assertEqual(parsed["hand"], "LHR/RHR")
+
+    def test_detail_table_keeps_missing_door_number_as_unknown(self):
+        parsed = parse_detail_door_row("                         1       SGL DR                  EXTERIOR FROM STORAGE 113                                                                                                                        LHR")
+        self.assertEqual(parsed["door_number"], "")
+        self.assertEqual(parsed["door_number_status"], "unknown")
+
+    def test_door_index_columns_provide_the_authoritative_door_number_and_heading(self):
+        parsed = parse_door_index_row("             100A                    1      EXTERIOR FROM VESTIBULE 100                                                                 PR DRS       LHR/RHR")
+        self.assertEqual(parsed["door_number"], "100A")
+        self.assertEqual(parsed["heading_number"], "1")
+        self.assertEqual(parsed["description"], "EXTERIOR FROM VESTIBULE 100")
+        self.assertEqual(parsed["door_number_status"], "known")
+
+    def test_door_index_row_without_an_id_is_explicitly_unknown(self):
+        parsed = parse_door_index_row("             1      EXTERIOR FROM VESTIBULE 100                                                                 PR DRS       LHR/RHR")
+        self.assertEqual(parsed["door_number"], "")
+        self.assertEqual(parsed["door_number_status"], "unknown")
 
     def test_imported_schedule_is_persisted_and_confirmed_matches_are_saved_per_door(self):
         products = [
@@ -95,6 +127,29 @@ class ScheduleImportTests(unittest.TestCase):
             Handler.get_verification_run(run, db, run_id)
         self.assertEqual(run.response[1]["doors"][0]["door_number"], "D101")
         self.assertEqual(run.response[1]["doors"][0]["result"]["status"], "compatible")
+
+        with closing(database.connect()) as db:
+            unknown = ResponseHarness()
+            Handler.add_project_door(unknown, db, {"project_id": imported["project_id"], "door_number_status": "unknown", "description": "Opening without a printed ID"})
+            unknown_id = unknown.response[1]["id"]
+            saved = db.execute("SELECT door_number,door_number_status FROM scheduled_doors WHERE id=?", (unknown_id,)).fetchone()
+            self.assertEqual(saved["door_number_status"], "unknown")
+            self.assertTrue(saved["door_number"].startswith("Unknown"))
+            updated = ResponseHarness()
+            Handler.update_scheduled_door_number(updated, db, unknown_id, {"door_number_status": "known", "door_number": "100A"})
+            self.assertEqual(updated.response[1]["door_number"], "100A")
+
+        with patch("src.server.api.SCHEDULE_UPLOAD_DIR", upload_dir):
+            with closing(database.connect()) as db:
+                deleted, status, files = Handler.delete_project_records(ResponseHarness(), db, imported["project_id"])
+                self.assertEqual(status, 200)
+                self.assertEqual(deleted["project_name"], "Test hardware project")
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM projects WHERE id=?", (imported["project_id"],)).fetchone()[0], 0)
+                self.assertGreater(db.execute("SELECT COUNT(*) FROM products").fetchone()[0], 0)
+                db.commit()
+            for file_path in files:
+                file_path.unlink(missing_ok=True)
+        self.assertFalse((upload_dir / f"{hashlib.sha256(self.blank_pdf()).hexdigest()}.pdf").exists())
 
     def test_invalid_pdf_is_rejected_without_creating_a_project(self):
         harness = ResponseHarness()

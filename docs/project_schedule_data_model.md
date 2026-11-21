@@ -63,7 +63,7 @@ Blue nodes are the pre-existing tables; green nodes are the Step 3 additions. `p
 - **Projects** group multiple schedule revisions for one construction site.
 - **Evidence sources** identify schedule files and manufacturer or field documents, including URL/local path, revision, checksum, and metadata.
 - **Schedule revisions** preserve each received schedule as an immutable import version; a later revision can point to the one it supersedes.
-- **Scheduled doors** keep one row per source index row. `source_row_number` is the revision-local identity, so a repeated door number remains two rows until reviewed.
+- **Scheduled doors** keep one row per source index row. `source_row_number` is the revision-local identity, so a repeated door number remains two rows until reviewed. `door_number_status` distinguishes an extracted/confirmed ID from an explicitly unknown one; unknown rows keep their page and raw source text and appear in a separate review group.
 - **Hardware sets** are revision-local and allow repeated set codes by `occurrence_number`.
 - **Door/set assignments** link doors to sets while retaining the source quantity and transcription.
 - **Scheduled items** preserve heading-level quantity, units, SKU, description, page, and raw source text. `quantity_for_heading` is an aggregate from the set schedule, not an assumed per-door quantity.
