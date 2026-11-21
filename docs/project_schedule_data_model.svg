@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1210" viewBox="0 0 1800 1210" role="img" aria-labelledby="title desc">
+  <title id="title">Existing and new Door Hardware Checker database tables</title>
+  <desc id="desc">Blue cards are existing database tables. Green cards are new project and schedule import tables. New product matches and evidence link to the existing products table.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,4 L0,8 z" fill="#63758b"/></marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,4 L0,8 z" fill="#51815f"/></marker>
+    <style>
+      text { font-family: Segoe UI, Arial, sans-serif; fill: #203044; }
+      .title { font-size: 29px; font-weight: 700; }
+      .subtitle { font-size: 15px; fill: #596a7c; }
+      .group-title { font-size: 19px; font-weight: 700; }
+      .group-sub { font-size: 12px; fill: #64748b; }
+      .node-title { font-size: 14px; font-weight: 700; }
+      .node-copy { font-size: 11px; fill: #526276; }
+      .label { font-size: 11px; font-weight: 600; fill: #536579; }
+      .old-node { fill: #fff; stroke: #6682a6; stroke-width: 1.5; }
+      .new-node { fill: #fff; stroke: #61916d; stroke-width: 1.5; }
+      .edge { fill: none; stroke: #738397; stroke-width: 1.6; marker-end: url(#arrow); }
+      .edge-new { fill: none; stroke: #639173; stroke-width: 1.7; marker-end: url(#arrowGreen); }
+      .edge-dashed { fill: none; stroke: #6d83a0; stroke-width: 1.5; stroke-dasharray: 7 5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1800" height="1210" fill="#f7f9fc"/>
+  <text x="40" y="48" class="title">Door Hardware Checker database</text>
+  <text x="40" y="76" class="subtitle">Existing catalog and compatibility tables remain; project and schedule records connect to the exact-model product catalog.</text>
+  <rect x="40" y="105" width="390" height="1065" rx="14" fill="#eaf0f8" stroke="#c8d5e5"/>
+  <rect x="455" y="105" width="1305" height="1065" rx="14" fill="#eaf5ec" stroke="#c9dfcf"/>
+  <text x="66" y="142" class="group-title">Existing tables</text>
+  <text x="66" y="164" class="group-sub">Present before Step 3 · blue</text>
+  <text x="483" y="142" class="group-title">Step 3 additions</text>
+  <text x="483" y="164" class="group-sub">Project and schedule import data · green</text>
+
+  <!-- Existing tables -->
+  <g>
+    <rect x="65" y="190" width="340" height="91" rx="9" class="old-node"/>
+    <text x="84" y="218" class="node-title">products</text>
+    <text x="84" y="239" class="node-copy">Existing catalog and exact model IDs</text>
+    <text x="84" y="257" class="node-copy">Referenced by new product_matches and product_evidence</text>
+
+    <rect x="65" y="315" width="340" height="91" rx="9" class="old-node"/>
+    <text x="84" y="343" class="node-title">compatibility_assertions</text>
+    <text x="84" y="364" class="node-copy">product_ids is a JSON array</text>
+    <text x="84" y="382" class="node-copy">Existing product link is not a database foreign key</text>
+
+    <rect x="65" y="440" width="340" height="73" rx="9" class="old-node"/>
+    <text x="84" y="469" class="node-title">compatibility_rules</text>
+    <text x="84" y="490" class="node-copy">Reusable category-to-category comparisons</text>
+
+    <rect x="65" y="540" width="340" height="73" rx="9" class="old-node"/>
+    <text x="84" y="569" class="node-title">items</text>
+    <text x="84" y="590" class="node-copy">Legacy category/name list</text>
+
+    <rect x="65" y="640" width="340" height="73" rx="9" class="old-node"/>
+    <text x="84" y="669" class="node-title">rules</text>
+    <text x="84" y="690" class="node-copy">Legacy requirements JSON</text>
+
+    <rect x="65" y="740" width="340" height="73" rx="9" class="old-node"/>
+    <text x="84" y="769" class="node-title">research_notes</text>
+    <text x="84" y="790" class="node-copy">Research text and source fields</text>
+
+    <rect x="65" y="840" width="340" height="73" rx="9" class="old-node"/>
+    <text x="84" y="869" class="node-title">catalog_scrape_runs</text>
+    <text x="84" y="890" class="node-copy">Product refresh history</text>
+
+    <path d="M235 315 L235 284" class="edge-dashed"/>
+    <text x="247" y="302" class="label">JSON IDs</text>
+  </g>
+
+  <!-- New tables -->
+  <g>
+    <rect x="490" y="195" width="220" height="88" rx="9" class="new-node"/>
+    <text x="510" y="225" class="node-title">projects</text>
+    <text x="510" y="247" class="node-copy">Site identity and status</text>
+
+    <rect x="790" y="195" width="255" height="88" rx="9" class="new-node"/>
+    <text x="810" y="225" class="node-title">evidence_sources</text>
+    <text x="810" y="247" class="node-copy">Document path / URL, revision, hash</text>
+
+    <rect x="1125" y="195" width="265" height="88" rx="9" class="new-node"/>
+    <text x="1145" y="225" class="node-title">schedule_revisions</text>
+    <text x="1145" y="247" class="node-copy">Immutable import versions and lineage</text>
+
+    <rect x="490" y="385" width="255" height="104" rx="9" class="new-node"/>
+    <text x="510" y="415" class="node-title">scheduled_doors</text>
+    <text x="510" y="437" class="node-copy">One record per source row</text>
+    <text x="510" y="455" class="node-copy">Keeps repeated door numbers distinct</text>
+
+    <rect x="810" y="385" width="240" height="104" rx="9" class="new-node"/>
+    <text x="830" y="415" class="node-title">hardware_sets</text>
+    <text x="830" y="437" class="node-copy">Heading, occurrence and total sets</text>
+    <text x="830" y="455" class="node-copy">Revision-specific</text>
+
+    <rect x="1125" y="385" width="265" height="104" rx="9" class="new-node"/>
+    <text x="1145" y="415" class="node-title">door_set_assignments</text>
+    <text x="1145" y="437" class="node-copy">Door ↔ set relationship and quantity</text>
+    <text x="1145" y="455" class="node-copy">Preserves source reference</text>
+
+    <rect x="490" y="610" width="255" height="105" rx="9" class="new-node"/>
+    <text x="510" y="640" class="node-title">scheduled_items</text>
+    <text x="510" y="662" class="node-copy">SKU, schedule quantity, units, text</text>
+    <text x="510" y="680" class="node-copy">Page and raw source row</text>
+
+    <rect x="810" y="610" width="255" height="105" rx="9" class="new-node"/>
+    <text x="830" y="640" class="node-title">product_matches</text>
+    <text x="830" y="662" class="node-copy">Catalog candidates and review state</text>
+    <text x="830" y="680" class="node-copy">At most one confirmed match per item</text>
+
+    <rect x="1125" y="610" width="265" height="105" rx="9" class="new-node"/>
+    <text x="1145" y="640" class="node-title">product_match_evidence</text>
+    <text x="1145" y="662" class="node-copy">Source page / excerpt for a match</text>
+
+    <rect x="810" y="835" width="255" height="105" rx="9" class="new-node"/>
+    <text x="830" y="865" class="node-title">product_evidence</text>
+    <text x="830" y="887" class="node-copy">Documents linked to catalog products</text>
+
+    <rect x="1125" y="835" width="265" height="105" rx="9" class="new-node"/>
+    <text x="1145" y="865" class="node-title">import_review_issues</text>
+    <text x="1145" y="887" class="node-copy">Unresolved fields, IDs and matches</text>
+    <text x="1145" y="905" class="node-copy">Open / resolved / dismissed</text>
+  </g>
+
+  <!-- New-model relationships -->
+  <path d="M710 238 L790 238" class="edge-new"/>
+  <path d="M710 218 L740 178 L1090 178 L1145 195" class="edge-new"/>
+  <text x="850" y="208" class="label">project</text>
+  <path d="M1045 238 L1125 238" class="edge-new"/>
+  <text x="1060" y="228" class="label">source document</text>
+  <path d="M1210 283 L700 385" class="edge-new"/>
+  <path d="M1260 283 L940 385" class="edge-new"/>
+  <path d="M1245 283 L1255 385" class="edge-new"/>
+  <path d="M745 450 L770 520 L1090 520 L1145 489" class="edge-new"/>
+  <path d="M1050 437 L1125 437" class="edge-new"/>
+  <path d="M930 489 L650 610" class="edge-new"/>
+  <path d="M745 662 L810 662" class="edge-new"/>
+  <path d="M1065 662 L1125 662" class="edge-new"/>
+  <path d="M790 260 L765 300 L765 890 L810 890" class="edge-new"/>
+  <path d="M1045 260 L1145 610" class="edge-new"/>
+  <path d="M1260 283 L1260 610" class="edge-new"/>
+  <path d="M1390 283 L1430 315 L1430 875 L1390 875" class="edge-new"/>
+
+  <!-- Existing catalog links from new schedule data -->
+  <path d="M405 235 L445 235 L445 570 L805 570 L805 630 L810 630" class="edge"/>
+  <text x="555" y="558" class="label">product_id FK</text>
+  <path d="M405 235 L435 235 L435 980 L785 980 L785 890 L810 890" class="edge"/>
+  <text x="555" y="968" class="label">product_id FK</text>
+
+  <rect x="490" y="1030" width="900" height="70" rx="8" fill="#fff" stroke="#d0dbe6"/>
+  <text x="515" y="1059" class="node-title">Relationship summary</text>
+  <text x="515" y="1081" class="node-copy">New schedule items are not products. They become catalog links only through product_matches; existing compatibility tables are unchanged.</text>
+</svg>

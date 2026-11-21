@@ -14,6 +14,10 @@ Restart the API after backend changes. SQLite is the source of truth; back up `d
 
 Backend code lives in `src/server/`: `__main__.py` starts the app, `api.py` defines HTTP routes, `database.py` manages SQLite, `catalog.py` holds labels and reference data, `seed_data.py` loads product/evidence records, `catalog_refresh.py` refreshes public catalog listings, `compatibility.py` evaluates product pairs, and `opening_fit.py` checks opening constraints. Run backend tests with `python3 -m unittest discover -s tests -v`.
 
+## Project schedule data model
+
+The additive schedule/project tables are defined in `SQL/sqlite_schedule_schema.sql` and initialized with the local database. They preserve schedule revisions, door rows, hardware sets, assignments, scheduled items, reviewable product matches, evidence links, and import-review issues. The data model is documented in `docs/project_schedule_data_model.md`. Schedule upload and review screens are a later UI step; this schema does not yet import schedule files or create compatibility results from them. The PostgreSQL migration remains separate.
+
 The product catalog's **Refresh live catalogs** action fetches allowlisted public Camden, ADI, Wesco, and BG Distribution pages. The API also refreshes on startup and every 24 hours while it is running. Imported listings remain `research_lead` records and do not create compatibility assertions. `GET /api/catalog/status` reports the latest run; `POST /api/catalog/refresh` starts an on-demand refresh.
 
 ## Maintaining the compatibility library

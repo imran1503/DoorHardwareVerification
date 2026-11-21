@@ -8,10 +8,12 @@ from .seed_data import seed_manufacturer_product_data
 
 ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = ROOT / "doorhardware.db"
+SCHEDULE_SCHEMA_PATH = ROOT / "SQL" / "sqlite_schedule_schema.sql"
 
 def connect():
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
+    db.execute("PRAGMA foreign_keys = ON")
     return db
 
 def initialize():
@@ -23,6 +25,7 @@ def initialize():
         db.execute("CREATE TABLE IF NOT EXISTS compatibility_assertions (id INTEGER PRIMARY KEY, product_ids TEXT NOT NULL, outcome TEXT NOT NULL CHECK(outcome IN ('compatible','incompatible','conditional')), conditions TEXT NOT NULL DEFAULT '{}', rationale TEXT NOT NULL DEFAULT '', source_title TEXT NOT NULL DEFAULT '', source_url TEXT NOT NULL DEFAULT '', evidence_status TEXT NOT NULL DEFAULT 'research_lead', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(product_ids,conditions))")
         db.execute("CREATE TABLE IF NOT EXISTS compatibility_rules (id INTEGER PRIMARY KEY, name TEXT NOT NULL, category_a TEXT NOT NULL, category_b TEXT NOT NULL, spec_a TEXT NOT NULL, comparison TEXT NOT NULL, spec_b TEXT NOT NULL, pass_outcome TEXT NOT NULL DEFAULT 'compatible', fail_outcome TEXT NOT NULL DEFAULT 'incompatible', rationale TEXT NOT NULL DEFAULT '', source_title TEXT NOT NULL DEFAULT '', source_url TEXT NOT NULL DEFAULT '', evidence_status TEXT NOT NULL DEFAULT 'research_lead', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
         db.execute("CREATE TABLE IF NOT EXISTS catalog_scrape_runs (id INTEGER PRIMARY KEY, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, source_results TEXT NOT NULL, products_added INTEGER NOT NULL DEFAULT 0, products_refreshed INTEGER NOT NULL DEFAULT 0, products_unchanged INTEGER NOT NULL DEFAULT 0)")
+        db.executescript(SCHEDULE_SCHEMA_PATH.read_text(encoding="utf-8"))
         db.execute("CREATE INDEX IF NOT EXISTS idx_products_category ON products(category,active)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_assertions_status ON compatibility_assertions(evidence_status)")
         db.executemany(
