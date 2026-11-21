@@ -15,9 +15,12 @@ import {
   ExternalLink,
   FileText,
   FilePlus2,
+  Home,
   Layers3,
   Library,
   Maximize2,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Pencil,
@@ -337,10 +340,18 @@ function StatusPill({ status }) {
   );
 }
 
+const appPages = new Set(["home", "check", "projects", "products", "coverage", "rules", "research"]);
+function readAppRoute() {
+  const path = window.location.hash.replace(/^#\/?/, "").split("?")[0];
+  const [candidate, projectId] = path.split("/");
+  const page = appPages.has(candidate) ? candidate : "home";
+  return { page, projectId: page === "projects" && /^\d+$/.test(projectId || "") ? Number(projectId) : null };
+}
+
 export default function ModelApp() {
   const [data, setData] = useState(null);
   const [coverage, setCoverage] = useState(null);
-  const [page, setPage] = useState("check");
+  const [page, setPageState] = useState(() => readAppRoute().page);
   const [databaseState, setDatabaseState] = useState("connecting");
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
@@ -369,6 +380,8 @@ export default function ModelApp() {
   const [checking, setChecking] = useState(false);
   const [importing, setImporting] = useState(false);
   const [projects, setProjects] = useState([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [deletingProjectId, setDeletingProjectId] = useState(null);
   const [confirmDeleteProjectId, setConfirmDeleteProjectId] = useState(null);
   const [refreshingProjects, setRefreshingProjects] = useState(false);
@@ -429,6 +442,7 @@ export default function ModelApp() {
   const loadProjects = async () => {
     const result = await api("/api/projects");
     setProjects(result.projects || []);
+    setProjectsLoaded(true);
   };
   const refreshProjects = async () => {
     setRefreshingProjects(true);
@@ -452,6 +466,19 @@ export default function ModelApp() {
     );
     setProjectRun(null);
     setSourcePageText(null);
+  };
+  const setPage = (nextPage) => {
+    setPageState(nextPage);
+    if (appPages.has(nextPage)) {
+      const nextHash = `#/${nextPage}`;
+      if (window.location.hash !== nextHash) window.history.pushState(null, "", nextHash);
+    }
+  };
+  const openProject = async (projectId) => {
+    await loadProject(projectId);
+    const nextHash = `#/projects/${projectId}`;
+    if (window.location.hash !== nextHash) window.history.pushState(null, "", nextHash);
+    setPageState("projects");
   };
   const deleteProject = async (project) => {
     setDeletingProjectId(project.id);
@@ -495,17 +522,42 @@ export default function ModelApp() {
   }, []);
 
   useEffect(() => {
+    const syncRoute = () => {
+      const route = readAppRoute();
+      setPageState(route.page);
+      if (route.page === "projects" && route.projectId) {
+        loadProject(route.projectId).catch((error) => setNotice(error.message));
+      } else {
+        setProjectData(null);
+        setProjectRun(null);
+        setSourcePageText(null);
+      }
+    };
+    window.addEventListener("hashchange", syncRoute);
+    window.addEventListener("popstate", syncRoute);
+    if (!window.location.hash) window.history.replaceState(null, "", "#/home");
+    const initialRoute = readAppRoute();
+    if (initialRoute.page === "projects" && initialRoute.projectId) {
+      loadProject(initialRoute.projectId).catch((error) => setNotice(error.message));
+    }
+    return () => {
+      window.removeEventListener("hashchange", syncRoute);
+      window.removeEventListener("popstate", syncRoute);
+    };
+  }, []);
+
+  useEffect(() => {
     document.documentElement.dataset.theme = activeTheme;
     window.localStorage.setItem("door-hardware-theme", themeMode);
   }, [activeTheme, themeMode]);
 
   useEffect(() => {
-    if (page === "coverage")
+    if (page === "coverage" || (page === "home" && projectsLoaded && projects.length > 0))
       loadCoverage().catch((error) => setNotice(error.message));
-  }, [page, data?.products?.length, loadCoverage]);
+  }, [page, data?.products?.length, projectsLoaded, projects.length, loadCoverage]);
 
   useEffect(() => {
-    if (page === "projects") loadProjects().catch((error) => setNotice(error.message));
+    if (page === "projects" || page === "home") loadProjects().catch((error) => setNotice(error.message));
   }, [page]);
 
   useEffect(() => {
@@ -978,7 +1030,7 @@ export default function ModelApp() {
         }),
       });
       await loadProjects();
-      await loadProject(result.project_id);
+      await openProject(result.project_id);
       await loadData();
       setProjectForm({ name: "", project_code: "", revision_label: "" });
       setScheduleFile(null);
@@ -1178,6 +1230,9 @@ export default function ModelApp() {
     saving: "Saving to SQLite…",
     offline: "SQLite database unavailable",
   }[databaseState];
+  const totalScheduledDoors = projects.reduce((total, project) => total + Number(project.door_count || 0), 0);
+  const totalRevisions = projects.reduce((total, project) => total + Number(project.revision_count || 0), 0);
+  const latestProject = projects[0] || null;
   const projectDoors = projectData?.doors || [];
   const visibleProjectDoors = projectDoors.filter((door) =>
     `${door.door_number} ${door.heading_number} ${door.description}`.toLowerCase().includes(doorSearch.toLowerCase()),
@@ -1203,28 +1258,46 @@ export default function ModelApp() {
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="brand">
           <div>
             <strong>Door Hardware Checker</strong>
             <span>by Pro Security Controls Inc.</span>
           </div>
+          <strong className="brand-mark" aria-hidden="true">DHC</strong>
         </div>
-        <div className="workspace-label">WORKSPACE</div>
+        <button
+          className="sidebar-toggle"
+          type="button"
+          aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+          title={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+          onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+        >
+          {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+        </button>
         <nav>
           <NavItem
+            active={page === "home"}
+            onClick={() => { setProjectData(null); setProjectRun(null); setPage("home"); }}
+            icon={<Home size={18} />}
+            label="Home"
+            collapsed={sidebarCollapsed}
+          />
+          <NavItem
             active={page === "projects"}
-            onClick={() => setPage("projects")}
+            onClick={() => { setProjectData(null); setProjectRun(null); setPage("projects"); }}
             icon={<Building2 size={18} />}
             label="Projects"
             count={projects.length || undefined}
+            collapsed={sidebarCollapsed}
           />
           <NavItem
             active={page === "check"}
             onClick={() => setPage("check")}
             icon={<ClipboardCheck size={18} />}
             label="Compatibility check"
+            collapsed={sidebarCollapsed}
           />
           <NavItem
             active={page === "products"}
@@ -1232,6 +1305,7 @@ export default function ModelApp() {
             icon={<Library size={18} />}
             label="Product catalog"
             count={activeProducts.length}
+            collapsed={sidebarCollapsed}
           />
           <NavItem
             active={page === "coverage"}
@@ -1239,6 +1313,7 @@ export default function ModelApp() {
             icon={<Layers3 size={18} />}
             label="Compatibility coverage"
             count={coverage?.summary?.total}
+            collapsed={sidebarCollapsed}
           />
           <NavItem
             active={page === "rules"}
@@ -1246,6 +1321,7 @@ export default function ModelApp() {
             icon={<FilePlus2 size={18} />}
             label="Rules & assertions"
             count={data.compatibilityRules.length + data.assertions.length}
+            collapsed={sidebarCollapsed}
           />
           <NavItem
             active={page === "research"}
@@ -1253,6 +1329,7 @@ export default function ModelApp() {
             icon={<BookOpenText size={18} />}
             label="Compatibility research"
             count={data.researchNotes.length}
+            collapsed={sidebarCollapsed}
           />
         </nav>
         <div className="sidebar-bottom">
@@ -1316,6 +1393,80 @@ export default function ModelApp() {
             {notice}
             <X size={15} />
           </button>
+        )}
+
+        {page === "home" && (
+          <section className="content home-page">
+            <div className="home-heading">
+              <h1>{projectsLoaded && projects.length === 0 ? "Welcome to Door Hardware Checker" : localTime.getHours() < 12 ? "Good morning" : localTime.getHours() < 18 ? "Good afternoon" : "Good evening"}</h1>
+              <p>{projectsLoaded && projects.length === 0 ? "Bring in a schedule to start reviewing your door hardware." : "Your door hardware workspace at a glance."}</p>
+            </div>
+            <div className="home-hero">
+              {latestProject ? (
+                <>
+                  <div>
+                    <span className="home-eyebrow">PICK UP WHERE YOU LEFT OFF</span>
+                    <h2>{latestProject.name}</h2>
+                    <p>{latestProject.project_code || "No project code"} · {latestProject.revision_count} schedule revision{latestProject.revision_count === 1 ? "" : "s"} · {latestProject.door_count} scheduled doors</p>
+                  </div>
+                  <button className="button button-primary" onClick={() => openProject(latestProject.id).catch((error) => setNotice(error.message))}>Continue project <ArrowRight size={16} /></button>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <span className="home-eyebrow">GET STARTED</span>
+                    <h2>{projectsLoaded ? "Start with a door schedule" : "Loading your projects…"}</h2>
+                    <p>{projectsLoaded ? "Import a schedule to create your first project and review its hardware." : "Checking your local project workspace."}</p>
+                  </div>
+                  {projectsLoaded && <button className="button button-primary" onClick={() => setPage("projects")}><Upload size={15} /> Import schedule</button>}
+                </>
+              )}
+            </div>
+            {projectsLoaded && projects.length > 0 && <>
+              <div className="home-metrics">
+                <div className="home-metric"><span>Door rows across revisions</span><b>{totalScheduledDoors}</b></div>
+                <div className="home-metric"><span>Schedule revisions</span><b>{totalRevisions}</b></div>
+              </div>
+              <div className="home-columns">
+                <div className="home-projects">
+                  <div className="home-section-heading"><h2>Recent projects</h2><button className="text-link-button" onClick={() => setPage("projects")}>All projects <ArrowUpRight size={14} /></button></div>
+                  <div className="home-project-list">
+                    {projects.slice(0, 3).map((project) => (
+                      <button className="home-project-row" key={project.id} onClick={() => openProject(project.id).catch((error) => setNotice(error.message))}>
+                        <span className="home-project-info"><b>{project.name}</b><small>{project.project_code || "No project code"} · {project.revision_count} revision{project.revision_count === 1 ? "" : "s"}</small></span>
+                        <span className="home-project-doors"><b>{project.door_count}</b><small>doors</small></span>
+                        <ArrowUpRight size={16} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <aside className="home-side-panel">
+                  <div className="home-section-heading"><h2>Coverage snapshot</h2></div>
+                  <p>Product interactions represented in the catalog.</p>
+                  <div className="home-coverage-numbers">
+                    <div><b>{coverage?.summary?.assessed ?? "—"}</b><span>assessed</span></div>
+                    <div><b>{coverage?.summary?.unverified ?? "—"}</b><span>unverified</span></div>
+                  </div>
+                  <button className="button button-quiet" onClick={() => setPage("coverage")}>View compatibility coverage <ArrowRight size={15} /></button>
+                  <button className="home-quick-action" onClick={() => setPage("check")}><ClipboardCheck size={16} /><span><b>Quick compatibility check</b><small>Check exact product models</small></span><ArrowUpRight size={15} /></button>
+                </aside>
+              </div>
+            </>}
+            {projectsLoaded && projects.length === 0 && (
+              <div className="home-first-run">
+                <div className="home-first-run-heading">
+                  <span className="home-eyebrow">YOUR FIRST PROJECT</span>
+                  <h2>What happens next</h2>
+                </div>
+                <div className="home-first-run-steps">
+                  <div><span>01</span><b>Import the schedule</b><p>Upload the door hardware schedule as a PDF.</p></div>
+                  <div><span>02</span><b>Review the extraction</b><p>Check the doors and scheduled products the app identifies.</p></div>
+                  <div><span>03</span><b>Run door checks</b><p>Match exact products and review documented compatibility.</p></div>
+                </div>
+                <button className="home-quick-action home-first-run-quick-check" onClick={() => setPage("check")}><ClipboardCheck size={16} /><span><b>Need to check products without a schedule?</b><small>Run a quick compatibility check by exact model.</small></span><ArrowRight size={15} /></button>
+              </div>
+            )}
+          </section>
         )}
 
         {page === "check" && (
@@ -1690,7 +1841,7 @@ export default function ModelApp() {
                 <div className="project-card-heading"><div><h2>Existing projects</h2><p>{projects.length} project{projects.length === 1 ? "" : "s"} · locally stored{projectsRefreshedAt ? ` · refreshed ${projectsRefreshedAt.toLocaleTimeString()}` : ""}</p></div><button className="button button-quiet" disabled={refreshingProjects} onClick={refreshProjects}><RefreshCw size={15} className={refreshingProjects ? "is-spinning" : ""} /> {refreshingProjects ? "Refreshing…" : "Refresh"}</button></div>
                 {projects.length ? <div className="project-list">{projects.map((project) => (
                   <div className="project-list-row" key={project.id}>
-                    <button className="project-list-main" onClick={() => loadProject(project.id).catch((error) => setNotice(error.message))}>
+                    <button className="project-list-main" onClick={() => openProject(project.id).catch((error) => setNotice(error.message))}>
                       <div><strong>{project.name}</strong><span>{project.project_code || "No project code"} · {project.revision_count} schedule revision{project.revision_count === 1 ? "" : "s"}</span></div>
                       <div className="project-list-count"><b>{project.door_count}</b><small>doors</small></div><ArrowUpRight size={17} />
                     </button>
@@ -1713,7 +1864,7 @@ export default function ModelApp() {
           <section className="content projects-page project-detail-page">
             <div className="project-detail-heading">
               <div>
-                <button className="button button-quiet project-back" onClick={() => { setProjectData(null); setProjectRun(null); setSourcePageText(null); loadProjects().catch(() => {}); }}><ArrowLeft size={15} /> All projects</button>
+                <button className="button button-quiet project-back" onClick={() => { setProjectData(null); setProjectRun(null); setSourcePageText(null); setPage("projects"); loadProjects().catch(() => {}); }}><ArrowLeft size={15} /> All projects</button>
                 <h1>{projectData.project.name}</h1>
                 <p>{projectData.project.project_code || "No project code"} · {latestRevision?.revision_label || "No revision label"} · {latestRevision?.source_title}</p>
               </div>
@@ -2199,9 +2350,9 @@ function OpeningDetails({ opening, setOpening, preview, onExample }) {
   );
 }
 
-function NavItem({ active, onClick, icon, label, count }) {
+function NavItem({ active, onClick, icon, label, count, collapsed = false }) {
   return (
-    <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick}>
+    <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick} title={collapsed ? label : undefined} aria-label={label}>
       {icon}
       <span>{label}</span>
       {count != null && <span className="nav-count">{count}</span>}
