@@ -6,7 +6,11 @@ Blue tables existed before the schedule-import work. Green tables were added in 
 
 The SQLite schedule schema is in [`SQL/sqlite_schedule_schema.sql`](../../SQL/sqlite_schedule_schema.sql). Its full table and field notes are in [`docs/project_schedule_data_model.md`](../../docs/project_schedule_data_model.md).
 
-The schedule upload and review workflow is a later UI step. This schema only establishes where imported schedule records, catalog matches, evidence references, and review issues will be stored.
+## Step 6 schedule project workflow
+
+The website's **Projects** page accepts a hardware-schedule PDF, keeps the original file under the private ignored `data/schedules/` directory, and stores extracted page text, candidate doors, hardware sets, scheduled item rows, match candidates, and review flags in SQLite. The generic parser is text-first and heuristic. It preserves the source for review and never confirms catalog matches or compatibility automatically. Scanned or image-only schedules need visual/OCR review; extraction must be checked against the original schedule.
+
+The project workspace supports door search and previous/next navigation, per-door hardware and source-page review, manual catalog matching, saved verification runs, and CSV/JSON exports. Run `pip install -r requirements.txt` to install the PDF text extraction dependency. Schedule files are served back through the local API and are not placed in `public/`.
 
 ## Step 5 manufacturer research
 

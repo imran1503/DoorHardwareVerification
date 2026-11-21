@@ -8,6 +8,7 @@ from .seed_data import seed_manufacturer_product_data
 
 ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = ROOT / "doorhardware.db"
+SCHEDULE_UPLOAD_DIR = ROOT / "data" / "schedules"
 SCHEDULE_SCHEMA_PATH = ROOT / "SQL" / "sqlite_schedule_schema.sql"
 
 def connect():

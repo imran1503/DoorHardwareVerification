@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS schedule_revisions (
     UNIQUE (project_id, schedule_number, revision_label, evidence_source_id)
 );
 
+CREATE TABLE IF NOT EXISTS schedule_pages (
+    id INTEGER PRIMARY KEY,
+    schedule_revision_id INTEGER NOT NULL REFERENCES schedule_revisions(id) ON DELETE CASCADE,
+    page_number INTEGER NOT NULL CHECK (page_number > 0),
+    extracted_text TEXT NOT NULL DEFAULT '',
+    extraction_method TEXT NOT NULL DEFAULT 'pypdf_text',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (schedule_revision_id, page_number)
+);
+
 CREATE TABLE IF NOT EXISTS scheduled_doors (
     id INTEGER PRIMARY KEY,
     schedule_revision_id INTEGER NOT NULL REFERENCES schedule_revisions(id) ON DELETE CASCADE,
@@ -180,8 +190,29 @@ CREATE TABLE IF NOT EXISTS import_review_issues (
     CHECK (scheduled_door_id IS NOT NULL OR hardware_set_id IS NOT NULL OR scheduled_item_id IS NOT NULL OR issue_code <> '')
 );
 
+CREATE TABLE IF NOT EXISTS verification_runs (
+    id INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    schedule_revision_id INTEGER NOT NULL REFERENCES schedule_revisions(id) ON DELETE CASCADE,
+    run_name TEXT NOT NULL DEFAULT '',
+    summary_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(summary_json) AND json_type(summary_json) = 'object'),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS verification_run_doors (
+    id INTEGER PRIMARY KEY,
+    verification_run_id INTEGER NOT NULL REFERENCES verification_runs(id) ON DELETE CASCADE,
+    scheduled_door_id INTEGER NOT NULL REFERENCES scheduled_doors(id) ON DELETE CASCADE,
+    product_ids_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(product_ids_json) AND json_type(product_ids_json) = 'array'),
+    result_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(result_json) AND json_type(result_json) = 'object'),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (verification_run_id, scheduled_door_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_schedule_revisions_project
     ON schedule_revisions(project_id, imported_at DESC);
+CREATE INDEX IF NOT EXISTS idx_schedule_pages_revision
+    ON schedule_pages(schedule_revision_id, page_number);
 CREATE INDEX IF NOT EXISTS idx_scheduled_doors_revision_number
     ON scheduled_doors(schedule_revision_id, door_number);
 CREATE INDEX IF NOT EXISTS idx_hardware_sets_revision_code
@@ -194,3 +225,5 @@ CREATE INDEX IF NOT EXISTS idx_product_matches_product
     ON product_matches(product_id, review_status);
 CREATE INDEX IF NOT EXISTS idx_import_review_issues_revision_status
     ON import_review_issues(schedule_revision_id, review_status, severity);
+CREATE INDEX IF NOT EXISTS idx_verification_runs_project
+    ON verification_runs(project_id, created_at DESC);

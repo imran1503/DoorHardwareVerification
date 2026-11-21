@@ -3,11 +3,17 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faMoon, faSun } from "@fortawesome/free-solid-svg-icons";
 import {
   ArrowUpRight,
+  ArrowLeft,
+  ArrowRight,
+  Building2,
   BookOpenText,
   Check,
   ChevronDown,
   CircleHelp,
   ClipboardCheck,
+  Download,
+  ExternalLink,
+  FileText,
   FilePlus2,
   Layers3,
   Library,
@@ -362,6 +368,19 @@ export default function ModelApp() {
   const reportWasExpanded = useRef(false);
   const [checking, setChecking] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [projects, setProjects] = useState([]);
+  const [projectData, setProjectData] = useState(null);
+  const [projectRun, setProjectRun] = useState(null);
+  const [selectedDoorId, setSelectedDoorId] = useState(null);
+  const [doorSearch, setDoorSearch] = useState("");
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [scheduleFile, setScheduleFile] = useState(null);
+  const [projectForm, setProjectForm] = useState({ name: "", project_code: "", revision_label: "" });
+  const [matchQueries, setMatchQueries] = useState({});
+  const [manualDoorForm, setManualDoorForm] = useState(null);
+  const [manualSetForm, setManualSetForm] = useState(null);
+  const [manualItemForm, setManualItemForm] = useState(null);
+  const [sourcePageText, setSourcePageText] = useState(null);
   const [refreshingCatalog, setRefreshingCatalog] = useState(false);
   const importInput = useRef(null);
   const evidenceImportInput = useRef(null);
@@ -400,6 +419,21 @@ export default function ModelApp() {
       setNotice(error.message);
     }
   }, []);
+  const loadProjects = async () => {
+    const result = await api("/api/projects");
+    setProjects(result.projects || []);
+  };
+  const loadProject = async (projectId) => {
+    const result = await api(`/api/projects/${projectId}`);
+    setProjectData(result);
+    setSelectedDoorId((current) =>
+      result.doors.some((door) => door.id === current)
+        ? current
+        : result.doors[0]?.id || null,
+    );
+    setProjectRun(null);
+    setSourcePageText(null);
+  };
 
   useEffect(() => {
     loadData().catch((error) => {
@@ -435,6 +469,10 @@ export default function ModelApp() {
     if (page === "coverage")
       loadCoverage().catch((error) => setNotice(error.message));
   }, [page, data?.products?.length, loadCoverage]);
+
+  useEffect(() => {
+    if (page === "projects") loadProjects().catch((error) => setNotice(error.message));
+  }, [page]);
 
   useEffect(() => {
     if (!reportExpanded) {
@@ -882,6 +920,163 @@ export default function ModelApp() {
     }
   };
 
+  const uploadSchedule = async (event) => {
+    event.preventDefault();
+    const fileInput = event.currentTarget.querySelector('input[type="file"]');
+    if (!scheduleFile || !projectForm.name.trim()) {
+      setNotice("Enter a project name and choose a hardware-schedule PDF.");
+      return;
+    }
+    setProjectBusy(true);
+    setDatabaseState("saving");
+    try {
+      const bytes = new Uint8Array(await scheduleFile.arrayBuffer());
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let index = 0; index < bytes.length; index += chunkSize)
+        binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+      const result = await api("/api/projects/import-schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          ...projectForm,
+          filename: scheduleFile.name,
+          file_base64: window.btoa(binary),
+        }),
+      });
+      await loadProjects();
+      await loadProject(result.project_id);
+      await loadData();
+      setProjectForm({ name: "", project_code: "", revision_label: "" });
+      setScheduleFile(null);
+      setNotice(`Imported ${result.counts.pages} pages: ${result.counts.doors} door rows, ${result.counts.sets} sets, ${result.counts.items} items. Review flagged rows before checking.`);
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setProjectBusy(false);
+      setDatabaseState("connected");
+      if (fileInput) fileInput.value = "";
+    }
+  };
+  const saveScheduleMatch = async (itemId, productId) => {
+    try {
+      await api("/api/scheduled-items/matches", {
+        method: "POST",
+        body: JSON.stringify({ scheduled_item_id: itemId, product_id: productId, review_status: "confirmed" }),
+      });
+      await loadProject(projectData.project.id);
+      setNotice("Catalog match confirmed for this schedule line.");
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+  const addManualDoor = async (event) => {
+    event.preventDefault();
+    try {
+      await api("/api/projects/doors", {
+        method: "POST",
+        body: JSON.stringify({ project_id: projectData.project.id, ...manualDoorForm }),
+      });
+      await loadProject(projectData.project.id);
+      setManualDoorForm(null);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+  const addManualSet = async (event) => {
+    event.preventDefault();
+    try {
+      await api("/api/projects/sets", {
+        method: "POST",
+        body: JSON.stringify({ project_id: projectData.project.id, ...manualSetForm }),
+      });
+      await loadProject(projectData.project.id);
+      setManualSetForm(null);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+  const addManualItem = async (event) => {
+    event.preventDefault();
+    try {
+      await api(`/api/hardware-sets/${manualItemForm.hardware_set_id}/items`, {
+        method: "POST",
+        body: JSON.stringify(manualItemForm),
+      });
+      await loadProject(projectData.project.id);
+      setManualItemForm(null);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+  const showSourcePage = async (pageNumber) => {
+    const revision = projectData.revisions.find((item) => item.id === projectData.revision_id);
+    if (!revision || !pageNumber) return;
+    try {
+      const result = await api(`/api/schedule-revisions/${revision.id}/pages?page=${pageNumber}`);
+      setSourcePageText(result);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+  const runProjectVerification = async () => {
+    if (!projectData) return;
+    setProjectBusy(true);
+    try {
+      const created = await api(`/api/projects/${projectData.project.id}/verify`, {
+        method: "POST",
+        body: JSON.stringify({ run_name: `Review ${new Date().toLocaleString()}` }),
+      });
+      const report = await api(`/api/verification-runs/${created.run_id}`);
+      await loadProject(projectData.project.id);
+      setProjectRun(report);
+      setNotice("Door verification run saved to this project.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setProjectBusy(false);
+    }
+  };
+  const loadProjectRun = async (runId) => {
+    try {
+      const result = await api(`/api/verification-runs/${runId}`);
+      setProjectRun(result);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+  const exportProjectRun = (format) => {
+    if (!projectRun) return;
+    let blob, extension;
+    if (format === "json") {
+      blob = new Blob([JSON.stringify(projectRun, null, 2)], { type: "application/json" });
+      extension = "json";
+    } else {
+      const quote = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+      const rows = [["Door", "Hardware set", "Status", "Message", "Scheduled PDF page", "Products", "Findings", "Evidence URLs"]];
+      projectRun.doors.forEach((door) => {
+        const result = door.result || {};
+        rows.push([
+          door.door_number,
+          door.heading_number,
+          result.status,
+          result.message,
+          door.source_page,
+          (result.products || []).map((product) => displayName(product)).join("; "),
+          (result.findings || []).map((finding) => finding.rationale).join(" | "),
+          (result.findings || []).map((finding) => finding.source_url).filter(Boolean).join("; "),
+        ]);
+      });
+      blob = new Blob([rows.map((row) => row.map(quote).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+      extension = "csv";
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${projectData.project.project_code || projectData.project.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}-verification-run-${projectRun.run.id}.${extension}`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const searchProductCompatibility = (product) => {
     const exactModel = `"${displayName(product)}"`;
     const query = `${exactModel} ("compatible with" OR "works with" OR compatibility OR interoperability OR wiring) ("minimum door width" OR "maximum door width" OR "door width" OR "door height" OR "maximum weight" OR "door thickness" OR "door material" OR "frame material" OR voltage OR mounting OR interface) manufacturer specifications datasheet`;
@@ -931,6 +1126,14 @@ export default function ModelApp() {
     saving: "Saving to SQLite…",
     offline: "SQLite database unavailable",
   }[databaseState];
+  const projectDoors = projectData?.doors || [];
+  const visibleProjectDoors = projectDoors.filter((door) =>
+    `${door.door_number} ${door.heading_number} ${door.description}`.toLowerCase().includes(doorSearch.toLowerCase()),
+  );
+  const selectedProjectDoor = visibleProjectDoors.find((door) => door.id === selectedDoorId) || visibleProjectDoors[0] || null;
+  const selectedDoorIndex = visibleProjectDoors.findIndex((door) => door.id === selectedProjectDoor?.id);
+  const selectedRunDoor = projectRun?.doors?.find((door) => door.scheduled_door_id === selectedProjectDoor?.id);
+  const latestRevision = projectData?.revisions?.find((revision) => revision.id === projectData.revision_id);
 
   return (
     <div className="app-shell">
@@ -943,6 +1146,13 @@ export default function ModelApp() {
         </div>
         <div className="workspace-label">WORKSPACE</div>
         <nav>
+          <NavItem
+            active={page === "projects"}
+            onClick={() => setPage("projects")}
+            icon={<Building2 size={18} />}
+            label="Projects"
+            count={projects.length || undefined}
+          />
           <NavItem
             active={page === "check"}
             onClick={() => setPage("check")}
@@ -1366,6 +1576,135 @@ export default function ModelApp() {
             onDownloadTemplate={downloadEvidenceTemplate}
             importing={importing}
           />
+        )}
+
+        {page === "projects" && !projectData && (
+          <section className="content projects-page">
+            <div className="page-heading">
+              <div>
+                <span className="eyebrow">SITE WORKSPACE</span>
+                <h1>Projects</h1>
+                <p>Import a hardware schedule, review extracted doors and items, then save a sourced verification run for the site.</p>
+              </div>
+            </div>
+            <div className="projects-home-grid">
+              <form className="project-import-card" onSubmit={uploadSchedule}>
+                <div className="project-card-heading">
+                  <div className="section-icon"><Upload size={18} /></div>
+                  <div><h2>Import hardware schedule</h2><p>Start with any selectable-text PDF. Extracted rows stay in review until checked against the source.</p></div>
+                </div>
+                <div className="project-form-grid">
+                  <Field label="Project name" wide>
+                    <input required value={projectForm.name} onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })} placeholder="Project or site name" />
+                  </Field>
+                  <Field label="Project code">
+                    <input value={projectForm.project_code} onChange={(event) => setProjectForm({ ...projectForm, project_code: event.target.value })} placeholder="Optional" />
+                  </Field>
+                  <Field label="Schedule revision">
+                    <input value={projectForm.revision_label} onChange={(event) => setProjectForm({ ...projectForm, revision_label: event.target.value })} placeholder="e.g. A1" />
+                  </Field>
+                  <Field label="Hardware schedule PDF" wide>
+                    <input type="file" accept="application/pdf,.pdf" onChange={(event) => {
+                      const file = event.target.files?.[0] || null;
+                      setScheduleFile(file);
+                      if (file && !projectForm.name) setProjectForm((current) => ({ ...current, name: file.name.replace(/\.pdf$/i, "") }));
+                    }} />
+                  </Field>
+                </div>
+                <div className="project-import-note"><CircleHelp size={16} /><span>The importer keeps the original PDF privately in local app storage. Text extraction is heuristic; scanned pages, ambiguous fields, and unmatched products are flagged for review.</span></div>
+                <div className="project-form-actions">
+                  <button className="button button-primary" type="submit" disabled={projectBusy || !scheduleFile}>
+                    <Upload size={16} /> {projectBusy ? "Importing schedule…" : "Import schedule"}
+                  </button>
+                  {scheduleFile && <span className="muted-small">{scheduleFile.name} · {(scheduleFile.size / 1024 / 1024).toFixed(1)} MB</span>}
+                </div>
+              </form>
+              <div className="project-list-panel">
+                <div className="project-card-heading"><div><h2>Existing projects</h2><p>{projects.length} project{projects.length === 1 ? "" : "s"} · locally stored</p></div><button className="button button-quiet" onClick={() => loadProjects().catch((error) => setNotice(error.message))}><RefreshCw size={15} /> Refresh</button></div>
+                {projects.length ? <div className="project-list">{projects.map((project) => (
+                  <button className="project-list-row" key={project.id} onClick={() => loadProject(project.id).catch((error) => setNotice(error.message))}>
+                    <div><strong>{project.name}</strong><span>{project.project_code || "No project code"} · {project.revision_count} schedule revision{project.revision_count === 1 ? "" : "s"}</span></div>
+                    <div className="project-list-count"><b>{project.door_count}</b><small>doors</small></div><ArrowUpRight size={17} />
+                  </button>
+                ))}</div> : <div className="project-empty"><Building2 size={22} /><span>No projects yet. Import a schedule to create the first project.</span></div>}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {page === "projects" && projectData && (
+          <section className="content projects-page project-detail-page">
+            <div className="project-detail-heading">
+              <div>
+                <button className="button button-quiet project-back" onClick={() => { setProjectData(null); setProjectRun(null); setSourcePageText(null); loadProjects().catch(() => {}); }}><ArrowLeft size={15} /> All projects</button>
+                <h1>{projectData.project.name}</h1>
+                <p>{projectData.project.project_code || "No project code"} · {latestRevision?.revision_label || "No revision label"} · {latestRevision?.source_title}</p>
+              </div>
+              <div className="project-toolbar-actions">
+                {latestRevision && <button className="button button-quiet" onClick={() => window.open(`/api/schedule-sources/${latestRevision.evidence_source_id}/file`, "_blank", "noopener,noreferrer")}><FileText size={16} /> Original PDF</button>}
+                <button className="button button-primary" onClick={runProjectVerification} disabled={projectBusy || !projectDoors.length}><ShieldCheck size={16} /> {projectBusy ? "Checking doors…" : "Run all door checks"}</button>
+              </div>
+            </div>
+            <div className="project-summary-strip">
+              <div><span>DOORS</span><b>{projectDoors.length}</b></div>
+              <div><span>HARDWARE SETS</span><b>{projectData.sets.length}</b></div>
+              <div><span>REVIEW FLAGS</span><b className={projectData.issues.length ? "text-warning" : ""}>{projectData.issues.filter((issue) => issue.review_status === "open").length}</b></div>
+              <div><span>SAVED RUNS</span><b>{projectData.runs.length}</b></div>
+              {projectRun && <div className="project-export-actions"><button className="button button-quiet" onClick={() => exportProjectRun("csv")}><Download size={15} /> CSV</button><button className="button button-quiet" onClick={() => exportProjectRun("json")}><Download size={15} /> JSON</button></div>}
+            </div>
+            {projectData.issues.length > 0 && <details className="project-issues" open={projectData.issues.some((issue) => issue.severity === "blocking")}>
+              <summary><CircleHelp size={15} /> Import review flags <span>{projectData.issues.length}</span></summary>
+              <div className="project-issue-list">{projectData.issues.map((issue) => <div key={issue.id} className={`project-issue severity-${issue.severity}`}><span>{issue.severity}</span><div><b>{issue.message}</b>{issue.source_page && <button className="text-link-button" onClick={() => showSourcePage(issue.source_page)}>PDF page {issue.source_page}</button>}</div></div>)}</div>
+            </details>}
+            <div className="project-workspace-grid">
+              <aside className="door-browser">
+                <div className="door-browser-heading"><div><h2>Doors</h2><span>{visibleProjectDoors.length} shown · {projectDoors.length} total</span></div><button className="icon-button" title="Add door" onClick={() => setManualDoorForm({ door_number: "", heading_number: "", description: "", hand: "" })}><Plus size={17} /></button></div>
+                <label className="door-search"><Search size={16} /><input value={doorSearch} onChange={(event) => setDoorSearch(event.target.value)} placeholder="Search door number or set" /></label>
+                {manualDoorForm && <form className="manual-record-form" onSubmit={addManualDoor}>
+                  <input required placeholder="Door number" value={manualDoorForm.door_number} onChange={(event) => setManualDoorForm({ ...manualDoorForm, door_number: event.target.value })} />
+                  <input placeholder="Description" value={manualDoorForm.description} onChange={(event) => setManualDoorForm({ ...manualDoorForm, description: event.target.value })} />
+                  <select value={manualDoorForm.heading_number} onChange={(event) => setManualDoorForm({ ...manualDoorForm, heading_number: event.target.value })}><option value="">No set assigned</option>{projectData.sets.map((set) => <option key={set.id} value={set.set_code}>{set.set_code} · {set.description}</option>)}</select>
+                  <div><button className="button button-primary" type="submit">Save door</button><button className="button button-quiet" type="button" onClick={() => setManualDoorForm(null)}>Cancel</button></div>
+                </form>}
+                <div className="door-list">{visibleProjectDoors.map((door) => {
+                  const runDoor = projectRun?.doors?.find((result) => result.scheduled_door_id === door.id);
+                  return <button key={door.id} className={`door-list-item ${selectedProjectDoor?.id === door.id ? "active" : ""}`} onClick={() => { setSelectedDoorId(door.id); setSourcePageText(null); }}>
+                    <span className="door-list-status">{runDoor ? <StatusPill status={runDoor.result.status} /> : <span className="status-pending">Review</span>}</span>
+                    <strong>{door.door_number}</strong><small>{door.heading_number ? `Set ${door.heading_number}` : "Set not assigned"}{door.description ? ` · ${door.description}` : ""}</small>
+                  </button>;
+                })}{!visibleProjectDoors.length && <div className="project-empty compact">No matching doors.</div>}</div>
+                <div className="hardware-set-manager"><div><b>Hardware sets</b><button className="icon-button" title="Add hardware set" onClick={() => setManualSetForm({ set_code: "", description: "" })}><Plus size={16} /></button></div>
+                  {manualSetForm && <form className="manual-record-form" onSubmit={addManualSet}><input required placeholder="Set code" value={manualSetForm.set_code} onChange={(event) => setManualSetForm({ ...manualSetForm, set_code: event.target.value })} /><input placeholder="Description" value={manualSetForm.description} onChange={(event) => setManualSetForm({ ...manualSetForm, description: event.target.value })} /><div><button className="button button-primary" type="submit">Save set</button><button className="button button-quiet" type="button" onClick={() => setManualSetForm(null)}>Cancel</button></div></form>}
+                  {projectData.sets.map((set) => <div className="set-manager-row" key={set.id}><span><b>{set.set_code}</b><small>{set.items.length} items</small></span><button className="text-link-button" onClick={() => setManualItemForm({ hardware_set_id: set.id, product_text: "", sku: "", quantity: 1, units: "EA", source_page: set.source_start_page || 1 })}>Add item</button>{manualItemForm?.hardware_set_id === set.id && <form className="manual-record-form set-item-form" onSubmit={addManualItem}><input required placeholder="Scheduled item text/model" value={manualItemForm.product_text} onChange={(event) => setManualItemForm({ ...manualItemForm, product_text: event.target.value })} /><div><input type="number" min="0.01" step="any" aria-label="Quantity" value={manualItemForm.quantity} onChange={(event) => setManualItemForm({ ...manualItemForm, quantity: Number(event.target.value) })} /><input placeholder="SKU (optional)" value={manualItemForm.sku} onChange={(event) => setManualItemForm({ ...manualItemForm, sku: event.target.value })} /></div><div><button className="button button-primary" type="submit">Save item</button><button className="button button-quiet" type="button" onClick={() => setManualItemForm(null)}>Cancel</button></div></form>}</div>)}
+                </div>
+              </aside>
+              <div className="door-review-panel">
+                {selectedProjectDoor ? <>
+                  <div className="door-review-heading">
+                    <div><span className="eyebrow">DOOR {selectedDoorIndex + 1} OF {visibleProjectDoors.length}</span><h2>{selectedProjectDoor.door_number}</h2><p>{selectedProjectDoor.description || "Door details need review"}</p></div>
+                    <div className="door-stepper"><button className="icon-button" disabled={selectedDoorIndex <= 0} aria-label="Previous door" onClick={() => setSelectedDoorId(visibleProjectDoors[selectedDoorIndex - 1]?.id)}><ArrowLeft size={17} /></button><button className="icon-button" disabled={selectedDoorIndex < 0 || selectedDoorIndex >= visibleProjectDoors.length - 1} aria-label="Next door" onClick={() => setSelectedDoorId(visibleProjectDoors[selectedDoorIndex + 1]?.id)}><ArrowRight size={17} /></button></div>
+                  </div>
+                  <div className="door-facts-row"><span>SET <b>{selectedProjectDoor.heading_number || "Unassigned"}</b></span><span>HAND <b>{selectedProjectDoor.hand || "Not parsed"}</b></span><span>PDF PAGE <b>{selectedProjectDoor.source_page || "—"}</b></span><button className="text-link-button" onClick={() => showSourcePage(selectedProjectDoor.source_page)}>View extracted page text</button></div>
+                  {sourcePageText && <div className="source-text-panel"><div><b>Extracted text · PDF page {sourcePageText.page_number}</b><button className="icon-button" onClick={() => setSourcePageText(null)} aria-label="Close source text"><X size={15} /></button></div><pre>{sourcePageText.text || "No selectable text on this page."}</pre></div>}
+                  {selectedRunDoor && <div className={`door-run-result status-${selectedRunDoor.result.status}`}><div className="door-run-title"><StatusPill status={selectedRunDoor.result.status} /><b>{selectedRunDoor.result.message}</b></div>{selectedRunDoor.result.estimate?.score != null && <small>Assessment {selectedRunDoor.result.estimate.score}% · confidence {selectedRunDoor.result.estimate.confidence}% · {selectedRunDoor.result.estimate.checks_in_average} checks in estimate</small>}{selectedRunDoor.result.findings?.map((finding, index) => <div className="door-run-finding" key={`${index}-${finding.source_url || finding.rationale}`}><StatusPill status={finding.status} /><span>{finding.rationale}</span>{finding.source_url && <a href={finding.source_url} target="_blank" rel="noreferrer">{finding.source_title || "Evidence source"} <ExternalLink size={12} /></a>}</div>)}</div>}
+                  <h3 className="door-items-heading">Scheduled hardware</h3>
+                  {selectedProjectDoor.assignments.length ? selectedProjectDoor.assignments.map((assignment) => <section className="door-set-section" key={assignment.id}><div className="door-set-heading"><div><b>Set {assignment.set_code}</b><span>{assignment.set_description || "Hardware set"} · PDF pages {assignment.source_start_page || "?"}–{assignment.source_end_page || "?"}</span></div><span>{assignment.items.length} scheduled items</span></div>
+                    {assignment.items.length ? assignment.items.map((item) => {
+                      const confirmed = item.matches.find((match) => match.review_status === "confirmed");
+                      const query = matchQueries[item.id] || "";
+                      const matches = query ? activeProducts.filter((product) => `${displayName(product)} ${product.name} ${product.category_label}`.toLowerCase().includes(query.toLowerCase())).slice(0, 5) : [];
+                      return <article className="scheduled-line-card" key={item.id}><div className="scheduled-line-main"><div><span className="scheduled-line-quantity">{item.quantity_for_heading ?? "—"} {item.units}</span>{item.sku && <span className="scheduled-line-sku">SKU {item.sku}</span>}</div><p>{item.product_text || item.description_text}</p><small>Source PDF page {item.source_page}</small></div><div className="scheduled-line-match">{confirmed ? <div className="confirmed-match"><Check size={15} /><div><b>{displayName(confirmed.product)}</b><small>Confirmed catalog match</small></div><button className="text-link-button" onClick={() => setMatchQueries({ ...matchQueries, [item.id]: " " })}>Change</button></div> : <>
+                        {item.matches.filter((match) => match.review_status !== "rejected").map((match) => <button className="candidate-match" key={match.id} onClick={() => saveScheduleMatch(item.id, match.product_id)}><span>Suggested match · verify</span><b>{displayName(match.product)}</b><small>Confirm this catalog match</small></button>)}
+                        <label className="catalog-match-search"><Search size={14} /><input value={query} onChange={(event) => setMatchQueries({ ...matchQueries, [item.id]: event.target.value })} placeholder="Search catalog by model" /></label>
+                        {matches.map((product) => <button className="catalog-match-option" key={product.id} onClick={() => saveScheduleMatch(item.id, product.id)}>{displayName(product)} <span>Confirm</span></button>)}
+                      </>}</div></article>;
+                    }) : <p className="muted-small empty-items">No item rows were parsed. Use Add item under Hardware sets after verifying the source page.</p>}
+                  </section>) : <div className="project-empty"><span>No hardware set is assigned to this door. Review the schedule page or add the assignment manually.</span></div>}
+                </> : <div className="project-empty door-empty"><FileText size={25} /><h2>No door rows recognized</h2><p>Use the source pages and review controls to add doors and hardware sets manually. The original PDF remains attached to this revision.</p><button className="button button-primary" onClick={() => setManualDoorForm({ door_number: "", heading_number: "", description: "", hand: "" })}><Plus size={15} /> Add first door</button></div>}
+              </div>
+            </div>
+            {projectData.runs.length > 0 && <section className="project-run-history"><div><h2>Verification log</h2><p>Saved, reproducible results for this schedule revision.</p></div><div className="run-history-list">{projectData.runs.map((run) => <button key={run.id} className={`run-history-card ${projectRun?.run.id === run.id ? "active" : ""}`} onClick={() => loadProjectRun(run.id)}><span><b>{run.run_name || `Run ${run.id}`}</b><small>{new Date(run.created_at).toLocaleString()} · {run.summary?.door_count || 0} doors</small></span><span>{Object.entries(run.summary?.status_counts || {}).map(([status, count]) => <em key={status}>{status.replaceAll("_", " ")} {count}</em>)}</span></button>)}</div></section>}
+          </section>
         )}
       </main>
 
