@@ -891,12 +891,41 @@ export default function ModelApp() {
     );
   }
 
+<<<<<<< Updated upstream
   const databaseStatus = {
     connecting: "Connecting to SQLite…",
     connected: "SQLite database connected",
     saving: "Saving to SQLite…",
     offline: "SQLite database unavailable",
   }[databaseState];
+=======
+  const totalScheduledDoors = projects.reduce((total, project) => total + Number(project.door_count || 0), 0);
+  const totalRevisions = projects.reduce((total, project) => total + Number(project.revision_count || 0), 0);
+  const latestProject = projects[0] || null;
+  const projectDoors = projectData?.doors || [];
+  const visibleProjectDoors = projectDoors.filter((door) =>
+    `${door.door_number} ${door.heading_number} ${door.description}`.toLowerCase().includes(doorSearch.toLowerCase()),
+  );
+  const knownProjectDoors = visibleProjectDoors.filter((door) => door.door_number_status !== "unknown");
+  const unknownProjectDoors = visibleProjectDoors.filter((door) => door.door_number_status === "unknown");
+  const visibleHardwareSets = [...(projectData?.sets || [])]
+    .filter((set) => `${set.set_code} ${set.description || ""}`.toLowerCase().includes(hardwareSetSearch.trim().toLowerCase()))
+    .sort((a, b) => a.set_code.localeCompare(b.set_code, undefined, { numeric: true, sensitivity: "base" }));
+  const selectedProjectDoor = visibleProjectDoors.find((door) => door.id === selectedDoorId) || visibleProjectDoors[0] || null;
+  const selectedDoorIndex = visibleProjectDoors.findIndex((door) => door.id === selectedProjectDoor?.id);
+  const selectedRunDoor = projectRun?.doors?.find((door) => door.scheduled_door_id === selectedProjectDoor?.id);
+  const latestRevision = projectData?.revisions?.find((revision) => revision.id === projectData.revision_id);
+  const renderProjectDoorRow = (door) => {
+    const runDoor = projectRun?.doors?.find((result) => result.scheduled_door_id === door.id);
+    const selected = selectedProjectDoor?.id === door.id;
+    const doorLabel = door.door_number_status === "unknown" ? "Unknown door number" : door.door_number;
+    return <button key={door.id} className={`door-list-item ${selected ? "active" : ""} ${door.door_number_status === "unknown" ? "door-list-item-unknown" : ""}`} onClick={() => { setSelectedDoorId(door.id); setSourcePageText(null); setDoorNumberForm(null); }}>
+      <strong>{doorLabel}</strong>
+      <span className="door-list-status">{runDoor ? <StatusPill status={runDoor.result.status} /> : <span className="status-pending">{door.door_number_status === "unknown" ? "Unknown ID" : "Review"}</span>}</span>
+      <small>{door.heading_number ? `Set ${door.heading_number}` : "Set not assigned"}{door.description ? ` · ${door.description}` : " · Description not parsed"}</small>
+    </button>;
+  };
+>>>>>>> Stashed changes
 
   return (
     <div className="app-shell">
@@ -992,12 +1021,6 @@ export default function ModelApp() {
                 }
               />
             </button>
-            <span className="sync-status">
-              <span
-                className={`live-dot ${databaseState === "offline" ? "is-offline" : databaseState === "saving" ? "is-saving" : ""}`}
-              />
-              {databaseStatus}
-            </span>
           </div>
         </header>
         {notice && (

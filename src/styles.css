@@ -215,17 +215,6 @@ button {
   gap: 17px;
   margin-left: auto;
 }
-.sync-status {
-  font-size: 10px;
-  color: #82908a;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.sync-status .live-dot {
-  height: 6px;
-  width: 6px;
-}
 .avatar {
   width: 29px;
   height: 29px;
@@ -1116,9 +1105,6 @@ button {
   .topbar {
     height: 54px;
     padding: 0 14px;
-  }
-  .sync-status {
-    display: none;
   }
   .content {
     padding: 26px 14px;
