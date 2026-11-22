@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="430" viewBox="0 0 1280 430" role="img" aria-labelledby="title description">
+  <title id="title">More Door Hardware Checker header options</title>
+  <desc id="description">Three additional header concepts using a plain blue square as a placeholder for the future Pro Security Controls icon.</desc>
+  <rect width="1280" height="430" fill="#141414"/>
+  <text x="40" y="36" fill="#f0f0f0" font-family="Arial, sans-serif" font-size="20" font-weight="700">More header options</text>
+  <text x="40" y="56" fill="#929b96" font-family="Arial, sans-serif" font-size="12">Blue square is a temporary placeholder for the Pro Security Controls icon</text>
+
+  <text x="40" y="82" fill="#8db8ff" font-family="Arial, sans-serif" font-size="10" font-weight="700" letter-spacing="1.4">04  /  CLEAN ICON LOCKUP</text>
+  <rect x="32" y="92" width="1216" height="78" rx="8" fill="#1e1e1e" stroke="#383838"/>
+  <rect x="51" y="109" width="44" height="44" rx="7" fill="#2878d0"/>
+  <text x="112" y="128" fill="#f0f0f0" font-family="Arial, sans-serif" font-size="19" font-weight="700">Door Hardware Checker</text>
+  <text x="113" y="147" fill="#aeb8b2" font-family="Arial, sans-serif" font-size="11">by Pro Security Controls Inc.</text>
+  <rect x="1186" y="113" width="42" height="36" rx="7" fill="#252525" stroke="#454545"/>
+  <path d="M1204 123a8 8 0 1 0 10 10 7 7 0 0 1-10-10Z" fill="#c8d3cc"/>
+
+  <text x="40" y="193" fill="#8db8ff" font-family="Arial, sans-serif" font-size="10" font-weight="700" letter-spacing="1.4">05  /  COMPANY-FIRST</text>
+  <rect x="32" y="203" width="1216" height="78" rx="8" fill="#1e1e1e" stroke="#383838"/>
+  <rect x="51" y="221" width="42" height="42" rx="6" fill="#2878d0"/>
+  <text x="110" y="232" fill="#aeb8b2" font-family="Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.2">PRO SECURITY CONTROLS INC.</text>
+  <text x="109" y="254" fill="#f0f0f0" font-family="Arial, sans-serif" font-size="18" font-weight="700">Door Hardware Checker</text>
+  <rect x="1080" y="228" width="88" height="28" rx="14" fill="#22364d"/>
+  <text x="1124" y="246" text-anchor="middle" fill="#a9caff" font-family="Arial, sans-serif" font-size="9" font-weight="700" letter-spacing=".7">WORKSPACE</text>
+  <rect x="1186" y="224" width="42" height="36" rx="7" fill="#252525" stroke="#454545"/>
+  <path d="M1204 234a8 8 0 1 0 10 10 7 7 0 0 1-10-10Z" fill="#c8d3cc"/>
+
+  <text x="40" y="304" fill="#8db8ff" font-family="Arial, sans-serif" font-size="10" font-weight="700" letter-spacing="1.4">06  /  SPLIT SIGNATURE</text>
+  <rect x="32" y="314" width="1216" height="78" rx="8" fill="#1e1e1e" stroke="#383838"/>
+  <rect x="51" y="331" width="44" height="44" rx="10" fill="#2878d0"/>
+  <text x="114" y="359" fill="#f0f0f0" font-family="Arial, sans-serif" font-size="19" font-weight="700">Door Hardware Checker</text>
+  <line x1="380" y1="335" x2="380" y2="371" stroke="#4a514d"/>
+  <text x="402" y="357" fill="#aeb8b2" font-family="Arial, sans-serif" font-size="11">Pro Security Controls Inc.</text>
+  <rect x="1186" y="335" width="42" height="36" rx="7" fill="#252525" stroke="#454545"/>
+  <path d="M1204 345a8 8 0 1 0 10 10 7 7 0 0 1-10-10Z" fill="#c8d3cc"/>
+</svg>

@@ -1314,14 +1314,44 @@ export default function ModelApp() {
 
   return (
     <div className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
-      <aside className="sidebar">
-        <div className="brand">
-          <div>
+      <header className="topbar">
+        <div className="app-brand">
+          <span className="app-brand-icon" aria-hidden="true" />
+          <div className="app-brand-copy">
             <strong>Door Hardware Checker</strong>
             <span>by Pro Security Controls Inc.</span>
           </div>
-          <strong className="brand-mark" aria-hidden="true">DHC</strong>
         </div>
+        <div className="topbar-right">
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={() =>
+              setThemeMode((mode) =>
+                mode === "auto"
+                  ? activeTheme === "dark"
+                    ? "light"
+                    : "dark"
+                  : "auto",
+              )
+            }
+            aria-label={themeLabel}
+          >
+            <FontAwesomeIcon
+              icon={
+                themeMode === "auto"
+                  ? isNight
+                    ? faSun
+                    : faMoon
+                  : activeTheme === "dark"
+                    ? faMoon
+                    : faSun
+              }
+            />
+          </button>
+        </div>
+      </header>
+      <aside className="sidebar">
         <button
           className="sidebar-toggle"
           type="button"
@@ -1407,36 +1437,6 @@ export default function ModelApp() {
         </div>
       </aside>
       <main className="main-area">
-        <header className="topbar">
-          <div className="topbar-right">
-            <button
-              className="theme-toggle"
-              type="button"
-              onClick={() =>
-                setThemeMode((mode) =>
-                  mode === "auto"
-                    ? activeTheme === "dark"
-                      ? "light"
-                      : "dark"
-                    : "auto",
-                )
-              }
-              aria-label={themeLabel}
-            >
-              <FontAwesomeIcon
-                icon={
-                  themeMode === "auto"
-                    ? isNight
-                      ? faSun
-                      : faMoon
-                    : activeTheme === "dark"
-                      ? faMoon
-                      : faSun
-                }
-              />
-            </button>
-          </div>
-        </header>
         {notice && (
           <button className="toast" onClick={() => setNotice("")}>
             {notice}

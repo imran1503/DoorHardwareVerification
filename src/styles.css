@@ -12,6 +12,7 @@
   --muted: #788583;
   --line: #e6ebe8;
   --accent-color: #1b735b;
+  --topbar-height: 62px;
   --green: var(--accent-color);
   --green-dark: color-mix(in srgb, var(--accent-color) 78%, #000);
   --pale: #e9f2ee;
@@ -36,42 +37,34 @@ button {
 }
 .app-shell {
   min-height: 100vh;
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr);
+  grid-template-rows: var(--topbar-height) minmax(calc(100vh - var(--topbar-height)), 1fr);
+}
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 68px minmax(0, 1fr);
 }
 .sidebar {
-  position: fixed;
-  inset: 0 auto 0 0;
-  width: 244px;
+  position: sticky;
+  top: var(--topbar-height);
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+  width: auto;
+  height: calc(100vh - var(--topbar-height));
   background: #fff;
   border-right: 1px solid var(--line);
-  padding: 27px 16px 19px;
+  padding: 18px 16px 19px;
   display: flex;
   flex-direction: column;
   z-index: 3;
 }
 .sidebar-collapsed .sidebar {
-  width: 68px;
-  padding: 27px 8px 19px;
+  padding: 18px 8px 19px;
 }
-.sidebar-collapsed .main-area {
-  margin-left: 68px;
-}
-.sidebar-collapsed .brand {
-  justify-content: center;
-  padding: 1px 0 0;
-}
-.sidebar-collapsed .brand > div,
 .sidebar-collapsed .nav-item span,
 .sidebar-collapsed .sidebar-bottom {
   display: none;
-}
-.brand-mark {
-  display: none !important;
-}
-.sidebar-collapsed .brand-mark {
-  display: block !important;
-  font: 700 12px var(--mono);
-  letter-spacing: -0.4px;
-  color: var(--green);
 }
 .sidebar-toggle {
   display: grid;
@@ -99,29 +92,40 @@ button {
 .sidebar-collapsed .nav-arrow {
   display: none;
 }
-.brand {
+.app-brand {
   display: flex;
-  align-items: flex-start;
-  gap: 11px;
-  height: 76px;
-  flex: 0 0 76px;
-  padding: 1px 7px 0;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-width: 0;
 }
-.brand strong {
+.app-brand-icon {
+  display: block;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: #2878d0;
+}
+.app-brand-copy {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.app-brand strong {
   font:
-    800 16.5px var(--heading-font),
+    800 16px var(--heading-font),
     sans-serif;
   letter-spacing: -0.45px;
   display: block;
-  line-height: 20px;
   white-space: nowrap;
 }
-.brand span {
-  font: 500 7.5px var(--mono);
+.app-brand-copy span {
+  font: 500 9px var(--body-font);
   letter-spacing: 0.35px;
   color: #95a19d;
   display: block;
-  margin-top: 4px;
+  margin-top: 3px;
   white-space: nowrap;
 }
 .eyebrow {
@@ -228,11 +232,18 @@ button {
   color: #39785e;
 }
 .main-area {
-  margin-left: 244px;
-  min-height: 100vh;
+  grid-column: 2;
+  grid-row: 2;
+  min-height: calc(100vh - var(--topbar-height));
+  min-width: 0;
 }
 .topbar {
-  height: 62px;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  height: var(--topbar-height);
   background: #fff;
   border-bottom: 1px solid var(--line);
   padding: 0 43px;
@@ -1092,14 +1103,24 @@ button {
   }
 }
 @media (max-width: 800px) {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 66px minmax(0, 1fr);
+  }
   .sidebar {
-    width: 66px;
     padding: 20px 9px;
   }
-  .brand {
-    padding: 1px 7px 35px;
+  .app-brand strong {
+    font-size: 14px;
   }
-  .brand > div:nth-child(2),
+  .app-brand-copy span {
+    font-size: 8px;
+  }
+  .app-brand-icon {
+    flex-basis: 38px;
+    width: 38px;
+    height: 38px;
+  }
   .nav-item span,
   .nav-arrow,
   .sidebar-bottom {
@@ -1108,9 +1129,6 @@ button {
   .nav-item {
     justify-content: center;
     padding: 0;
-  }
-  .main-area {
-    margin-left: 66px;
   }
   .topbar {
     padding: 0 22px;
@@ -1144,8 +1162,10 @@ button {
   }
 }
 @media (max-width: 540px) {
+  :root {
+    --topbar-height: 54px;
+  }
   .topbar {
-    height: 54px;
     padding: 0 14px;
   }
   .content {
@@ -1388,9 +1408,6 @@ html[data-theme="dark"] .sidebar-toggle:hover {
   background: #292929;
   border-color: #373737;
 }
-html[data-theme="dark"] .sidebar-collapsed .brand-mark {
-  color: #9fcaad;
-}
 html[data-theme="dark"] .topbar {
   border-bottom-color: #34413a;
 }
@@ -1411,7 +1428,7 @@ html[data-theme="dark"] .eyebrow,
 html[data-theme="dark"] .version {
   color: #9aa9a0;
 }
-html[data-theme="dark"] .brand span {
+html[data-theme="dark"] .app-brand-copy span {
   color: #a3b2a9;
 }
 html[data-theme="dark"] .page-heading h1,
@@ -1620,7 +1637,7 @@ html[data-theme="dark"] .nav-item.active > svg:first-child {
   color: #9fcaad;
 }
 html[data-theme="dark"] .eyebrow,
-html[data-theme="dark"] .brand span {
+html[data-theme="dark"] .app-brand-copy span {
   color: #a0a0a0;
 }
 html[data-theme="dark"] .page-heading h1,
