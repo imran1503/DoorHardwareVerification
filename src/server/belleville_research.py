@@ -62,6 +62,26 @@ def seed_belleville_set_1_research(db):
     closer_plate_rationale = "dormakaba's 7414/7436 ARJ top-jamb template lists BP86 as an available plate configuration. Use the matching template and verify reveal, header/frame geometry, and installed arm. This finding does not assess clearance against other hardware in the opening."
     db.execute("INSERT OR IGNORE INTO compatibility_assertions(product_ids,outcome,conditions,rationale,source_title,source_url,evidence_status) VALUES (?,'compatible','{}',?,?,?,'manufacturer_document')", (json.dumps(closer_plate_ids,separators=(",",":")),closer_plate_rationale,sources["dorma7400"][0],sources["dorma7400"][1]))
 
+    # ABH documents this as an installation-specific conflict, not a universal
+    # incompatibility. Conditions ensure it is asserted only for the chart's
+    # 36-inch, 90-degree, butt-hinge configuration.
+    holder_conflict_ids = sorted([product_ids["7414 ARJ"], product_ids["1013"]])
+    holder_conflict_conditions = json.dumps(
+        {"door_width_in": 36, "opening_angle_deg": 90, "hinge_type": "butt_hinges"},
+        sort_keys=True, separators=(",", ":"),
+    )
+    holder_conflict_rationale = (
+        "ABH's compatibility chart marks a 7400 ARJ closer with a 1000 Series concealed holder as incompatible "
+        "for the chart's stated 36-inch door, 90-degree opening, and butt-hinge assumptions. This finding applies "
+        "only to that configuration; verify the actual template and combined layout for other openings."
+    )
+    db.execute(
+        "INSERT OR IGNORE INTO compatibility_assertions(product_ids,outcome,conditions,rationale,source_title,source_url,evidence_status) "
+        "VALUES (?,'incompatible',?,?,?,?,'manufacturer_document')",
+        (json.dumps(holder_conflict_ids, separators=(",", ":")), holder_conflict_conditions,
+         holder_conflict_rationale, sources["abh_chart"][0], sources["abh_chart"][1]),
+    )
+
     warning = "ABH's chart marks a 7400 ARJ top-jamb closer with the 1000 concealed holder as incompatible under stated assumptions: 36-inch door, 90-degree opening, butt hinges. Door 100A is about 38 inches wide and uses a continuous geared hinge, so the row does not prove a universal conflict for this opening. Treat it as an installation hold pending the exact ABH template and combined-layout check."
     db.execute("INSERT OR IGNORE INTO research_notes(topic,related_components,guidance,source_title,source_url,evidence_status) VALUES (?,?,?,?,?,'manufacturer_document')", ("Belleville Set 1: 7414 ARJ closer and ABH 1013 holder interference review",json.dumps(["dormakaba 7414 ARJ","ABH 1013","661HD continuous geared hinge"]),warning,sources["abh_chart"][0],sources["abh_chart"][1]))
 

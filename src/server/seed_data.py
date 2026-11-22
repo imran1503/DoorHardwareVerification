@@ -402,7 +402,7 @@ def seed_manufacturer_product_data(db):
             ],
             "The CX-WC16-PS-M1 manual documents the CX-33-controlled restroom kit with the listed outside wave-to-open, inside wave-to-open, wave-to-lock switches, and CX-ED1799L-8 strike as one configured system. Confirm the selected mode, fail mode, exact wiring, and opening fit.",
             "Camden CX-WC16-PS-M1 Series Restroom Kit Installation Instructions",
-            "https://www.camdencontrols.com/pipelines/resource/a2505_WC16_PS_M1_Restroom_Control_Manual.pdf",
+            "https://frca.camdencontrols.com/pipelines/resource/129319_WC16_PS_M1_Restroom_Control_Manual.pdf",
         ),
         (
             [
@@ -418,7 +418,7 @@ def seed_manufacturer_product_data(db):
             ],
             "Camden's CX-WC16-PS-M1 wiring diagram documents this integrated restroom-control and emergency-call configuration, including the listed relay/power module, switches, strike, CX-WEC10-K2, and both annunciators. Apply the diagram's mode, output, and wiring requirements; this tuple does not establish compatibility with additional unlisted hardware.",
             "Camden CX-WC16-PS-M1 Series Restroom Kit Installation Instructions — Emergency Call Integration",
-            "https://www.camdencontrols.com/pipelines/resource/a2505_WC16_PS_M1_Restroom_Control_Manual.pdf",
+            "https://www.camdencontrols.com/pipelines/resource/a8015_WC16_PS_M1_Restroom_Control_Manual.pdf",
         ),
     ]
     for models, rationale, source_title, source_url in camden_assembly_tuples:
@@ -437,6 +437,12 @@ def seed_manufacturer_product_data(db):
             "INSERT OR IGNORE INTO compatibility_assertions(product_ids,outcome,conditions,rationale,source_title,source_url,evidence_status) VALUES (?,'compatible','{}',?,?,?,'manufacturer_document')",
             (json.dumps(product_ids, separators=(",", ":")), rationale, source_title, source_url),
         )
+        if source_url != "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=1" and "WC16-PS-M1" in source_title:
+            db.execute(
+                "UPDATE compatibility_assertions SET source_url=? WHERE product_ids=? AND conditions='{}' AND source_url=?",
+                (source_url, json.dumps(product_ids, separators=(",", ":")),
+                 "https://www.camdencontrols.com/pipelines/resource/a2505_WC16_PS_M1_Restroom_Control_Manual.pdf"),
+            )
 
     rule_seeds = [
         ("Norton 5800 documented activation interfaces", "automatic_operator", "activation_device", "5800_supported_activation_interfaces", "contains", "activation_interface", norton_source["source_title"], norton_source["source_url"], "The Norton 5800 manufacturer page lists the activation interface. This is interface-level evidence only; confirm exact options, receiver and wiring."),
