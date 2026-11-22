@@ -340,6 +340,52 @@ function StatusPill({ status }) {
   );
 }
 
+function DoorRunResult({ result }) {
+  const [subsetsExpanded, setSubsetsExpanded] = useState(false);
+  const subsetChecks = Array.isArray(result?.subset_checks) ? result.subset_checks : [];
+  const groups = subsetChecks.reduce((bySize, check) => {
+    (bySize[check.subset_size] ||= []).push(check);
+    return bySize;
+  }, {});
+  const exactCount = subsetChecks.filter((check) => check.has_exact_assertion).length;
+
+  return (
+    <div className={`door-run-result status-${result?.status || "unverified"}`}>
+      <div className="door-run-title"><StatusPill status={result?.status || "unverified"} /><b>{result?.message || "No saved result message."}</b></div>
+      {result?.estimate?.score != null && <small>Assessment {result.estimate.score}% · confidence {result.estimate.confidence}% · {result.estimate.checks_in_average} checks in estimate</small>}
+      {(result?.findings || []).map((finding, index) => {
+        const sources = [
+          ...(Array.isArray(finding.sources) ? finding.sources : []),
+          ...(finding.source_url ? [{ source_title: finding.source_title, source_url: finding.source_url }] : []),
+        ];
+        const uniqueSources = [...new Map(sources.filter((source) => source?.source_url).map((source) => [source.source_url, source])).values()];
+        return <div className="door-run-finding" key={`${index}-${finding.source_url || finding.rationale}`}>
+          <StatusPill status={finding.status} /><span>{finding.rationale}</span>
+          {uniqueSources.map((source) => <a key={source.source_url} href={source.source_url} target="_blank" rel="noreferrer">{source.source_title || "Evidence source"} <ExternalLink size={12} /></a>)}
+        </div>;
+      })}
+      {subsetChecks.length > 0 && <div className="door-run-subsets">
+        <button className="text-link-button" type="button" aria-expanded={subsetsExpanded} onClick={() => setSubsetsExpanded((expanded) => !expanded)}>
+          {subsetsExpanded ? "Hide combination breakdown" : "Show combination breakdown"}
+          <span>{subsetChecks.length} groups · {exactCount} exact assertions · {subsetChecks.length - exactCount} evidence gaps</span>
+        </button>
+        {subsetsExpanded && <div className="door-run-subset-groups">
+          {Object.entries(groups).map(([size, checks]) => <details className="door-run-subset-group" key={size}>
+            <summary>{size}-model groups <span>{checks.length}</span></summary>
+            <div className="door-run-subset-list">{checks.map((check) => <article className="door-run-subset" key={check.product_ids.join("-")}>
+              <div><StatusPill status={check.status} /><span>{(check.products || []).map((product) => `${product.manufacturer} ${product.model || product.name}`.trim()).join(" + ")}</span></div>
+              <p>{check.rationale}</p>
+              {check.conditions && Object.keys(check.conditions).length > 0 && <small>Conditions: {Object.entries(check.conditions).map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`).join(" · ")}</small>}
+              {check.has_exact_assertion && <small>Assertion {check.assertion_id} · {String(check.evidence_status || "").replaceAll("_", " ")}</small>}
+              {check.source_url && <a href={check.source_url} target="_blank" rel="noreferrer">{check.source_title || "Evidence source"} <ExternalLink size={12} /></a>}
+            </article>)}</div>
+          </details>)}
+        </div>}
+      </div>}
+    </div>
+  );
+}
+
 const appPages = new Set(["home", "check", "projects", "products", "coverage", "rules", "research"]);
 function readAppRoute() {
   const path = window.location.hash.replace(/^#\/?/, "").split("?")[0];
@@ -1160,9 +1206,19 @@ export default function ModelApp() {
       extension = "json";
     } else {
       const quote = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
-      const rows = [["Door", "Hardware set", "Status", "Message", "Scheduled PDF page", "Products", "Findings", "Evidence URLs"]];
+      const rows = [["Door", "Hardware set", "Status", "Message", "Scheduled PDF page", "Products", "Findings", "Combination checks", "Evidence sources"]];
       projectRun.doors.forEach((door) => {
         const result = door.result || {};
+        const findings = result.findings || [];
+        const subsetChecks = result.subset_checks || [];
+        const evidenceSources = [
+          ...findings.flatMap((finding) => [
+            ...(Array.isArray(finding.sources) ? finding.sources : []),
+            ...(finding.source_url ? [{ source_title: finding.source_title, source_url: finding.source_url }] : []),
+          ]),
+          ...subsetChecks.filter((check) => check.source_url).map((check) => ({ source_title: check.source_title, source_url: check.source_url })),
+        ];
+        const uniqueSources = [...new Map(evidenceSources.filter((source) => source?.source_url).map((source) => [source.source_url, source])).values()];
         rows.push([
           door.door_number,
           door.heading_number,
@@ -1170,8 +1226,9 @@ export default function ModelApp() {
           result.message,
           door.source_page,
           (result.products || []).map((product) => displayName(product)).join("; "),
-          (result.findings || []).map((finding) => finding.rationale).join(" | "),
-          (result.findings || []).map((finding) => finding.source_url).filter(Boolean).join("; "),
+          findings.map((finding) => `${finding.status}: ${finding.rationale}`).join(" | "),
+          subsetChecks.map((check) => `${(check.products || []).map((product) => `${product.manufacturer} ${product.model || product.name}`.trim()).join(" + ")} [${check.status}] ${check.rationale}${check.conditions && Object.keys(check.conditions).length ? ` Conditions: ${JSON.stringify(check.conditions)}` : ""}`).join(" | "),
+          uniqueSources.map((source) => `${source.source_title || "Evidence"}: ${source.source_url}`).join("; "),
         ]);
       });
       blob = new Blob([rows.map((row) => row.map(quote).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
@@ -1922,7 +1979,7 @@ export default function ModelApp() {
                     <div><button className="button button-primary" type="submit">Save number status</button><button className="button button-quiet" type="button" onClick={() => setDoorNumberForm(null)}>Cancel</button></div>
                   </form>}
                   {sourcePageText && <div className="source-text-panel"><div><b>Extracted text · PDF page {sourcePageText.page_number}</b><button className="icon-button" onClick={() => setSourcePageText(null)} aria-label="Close source text"><X size={15} /></button></div><pre>{sourcePageText.text || "No selectable text on this page."}</pre></div>}
-                  {selectedRunDoor && <div className={`door-run-result status-${selectedRunDoor.result.status}`}><div className="door-run-title"><StatusPill status={selectedRunDoor.result.status} /><b>{selectedRunDoor.result.message}</b></div>{selectedRunDoor.result.estimate?.score != null && <small>Assessment {selectedRunDoor.result.estimate.score}% · confidence {selectedRunDoor.result.estimate.confidence}% · {selectedRunDoor.result.estimate.checks_in_average} checks in estimate</small>}{selectedRunDoor.result.findings?.map((finding, index) => <div className="door-run-finding" key={`${index}-${finding.source_url || finding.rationale}`}><StatusPill status={finding.status} /><span>{finding.rationale}</span>{finding.source_url && <a href={finding.source_url} target="_blank" rel="noreferrer">{finding.source_title || "Evidence source"} <ExternalLink size={12} /></a>}</div>)}</div>}
+                  {selectedRunDoor && <DoorRunResult result={selectedRunDoor.result} />}
                   <h3 className="door-items-heading">Scheduled hardware</h3>
                   {selectedProjectDoor.assignments.length ? selectedProjectDoor.assignments.map((assignment) => <section className="door-set-section" key={assignment.id}><div className="door-set-heading"><div><b>Set {assignment.set_code}</b><span>{assignment.set_description || "Hardware set"} · PDF pages {assignment.source_start_page || "?"}–{assignment.source_end_page || "?"}</span></div><span>{assignment.items.length} scheduled items</span></div>
                     {assignment.items.length ? assignment.items.map((item) => {
