@@ -1,17 +1,31 @@
 """HTTP API routes for the Door Hardware Verification app."""
 from http.server import BaseHTTPRequestHandler
+import base64
+import binascii
+import hashlib
 import json
+from pathlib import Path
+import re
 import sqlite3
 from urllib.parse import parse_qs, urlparse
 
 from .catalog import CATEGORIES, EVIDENCE_STATUSES, FIELDS, INTERACTION_PAIRS, MODEL_SPECIFIC_FIELDS, PRODUCT_CATEGORIES
-from .compatibility import assembly_estimate, coverage_rows, coverage_summary, pair_estimate, pair_evaluation, pair_is_applicable, power_path_findings
+from .compatibility import assembly_estimate, assembly_subset_checks, coverage_rows, coverage_summary, pair_estimate, pair_evaluation, pair_is_applicable, power_path_findings
 from .database import (
     assertion_dict, compatibility_rule_dict, connect, item_dict, normalized_ids,
-    product_dict, rule_dict, trusted_evidence, trusted_product_record,
+    product_dict, rule_dict, SCHEDULE_UPLOAD_DIR, trusted_evidence, trusted_product_record,
 )
 from .opening_fit import opening_fit_findings
 from .catalog_refresh import refresh_catalogs
+from .schedule_import import extract_schedule
+
+
+class _JsonHarness:
+    """Small response capture used to reuse the assembly evaluator for saved runs."""
+    def send_json(self, data, status=200):
+        self.response = (status, data)
+        return self.response
+
 
 class Handler(BaseHTTPRequestHandler):
     def send_json(self, data, status=200):
@@ -25,6 +39,15 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_bytes(self, body, content_type, filename=None):
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        if filename:
+            self.send_header("Content-Disposition", f'inline; filename="{filename}"')
+        self.end_headers()
+        self.wfile.write(body)
+
     def read_json(self):
         return json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}")
 
@@ -33,6 +56,24 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         with connect() as db:
+            if path == "/api/projects":
+                return self.list_projects(db)
+            if path.startswith("/api/projects/"):
+                parts = path.strip("/").split("/")
+                if len(parts) == 3 and parts[2].isdigit():
+                    return self.get_project(db, int(parts[2]))
+                if len(parts) == 4 and parts[2] == "runs" and parts[3].isdigit():
+                    return self.get_verification_run(db, int(parts[3]))
+            if path.startswith("/api/schedule-revisions/") and path.endswith("/pages"):
+                parts = path.strip("/").split("/")
+                if len(parts) == 4 and parts[2].isdigit():
+                    return self.get_schedule_pages(db, int(parts[2]))
+            if path.startswith("/api/schedule-sources/") and path.endswith("/file"):
+                parts = path.strip("/").split("/")
+                if len(parts) == 4 and parts[2].isdigit():
+                    return self.get_schedule_file(db, int(parts[2]))
+            if path.startswith("/api/verification-runs/") and path.split("/")[-1].isdigit():
+                return self.get_verification_run(db, int(path.split("/")[-1]))
             if path == "/api/catalog/status":
                 row = db.execute("SELECT * FROM catalog_scrape_runs ORDER BY id DESC LIMIT 1").fetchone()
                 if not row:
@@ -61,7 +102,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     filtered = [row for row in rows if row.get("status") == status_filter]
                 if search:
-                    filtered = [row for row in filtered if search in " ".join((row["product_a"].get("name", ""), row["product_a"].get("manufacturer", ""), row["product_a"].get("model", ""), row["product_b"].get("name", ""), row["product_b"].get("manufacturer", ""), row["product_b"].get("model", ""))).casefold()]
+                    filtered = [row for row in filtered if search in " ".join((row["product_a"].get("name", ""), row["product_a"].get("manufacturer", ""), row["product_a"].get("model", ""), row["product_b"].get("name", ""), row["product_b"].get("manufacturer", ""), row["product_b"].get("model", ""), *(product.get("model", "") for evidence in row.get("assembly_evidence", []) for product in evidence.get("products", [])))).casefold()]
                 try:
                     page = max(1, int(query.get("page", ["1"])[0]))
                     page_size = min(100, max(1, int(query.get("page_size", ["50"])[0])))
@@ -86,6 +127,22 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as error:
                 return self.send_json({"error": f"Catalog refresh failed: {error}"}, 502)
         with connect() as db:
+            if path == "/api/projects/import-schedule":
+                return self.import_schedule(db, data)
+            if path == "/api/projects/doors":
+                return self.add_project_door(db, data)
+            if path == "/api/projects/sets":
+                return self.add_project_set(db, data)
+            if path == "/api/scheduled-items/matches":
+                return self.save_schedule_match(db, data)
+            if path.startswith("/api/projects/") and path.endswith("/verify"):
+                parts = path.strip("/").split("/")
+                if len(parts) == 4 and parts[2].isdigit():
+                    return self.verify_project(db, int(parts[2]), data)
+            if path.startswith("/api/hardware-sets/") and path.endswith("/items"):
+                parts = path.strip("/").split("/")
+                if len(parts) == 4 and parts[2].isdigit():
+                    return self.add_schedule_item(db, int(parts[2]), data)
             if path == "/api/products":
                 return self.create_product(db, data)
             if path == "/api/products/import":
@@ -147,6 +204,386 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"status": status, "message": messages[status], "findings": findings, "products": products})
         if path == "/api/compatibility/check": return self.check_assembly(data)
         self.send_json({"error":"Not found"}, 404)
+
+    def list_projects(self, db):
+        rows = db.execute(
+            "SELECT p.*, (SELECT COUNT(*) FROM schedule_revisions r WHERE r.project_id=p.id) AS revision_count, "
+            "(SELECT COUNT(*) FROM scheduled_doors d JOIN schedule_revisions r ON r.id=d.schedule_revision_id WHERE r.project_id=p.id) AS door_count "
+            "FROM projects p ORDER BY p.updated_at DESC,p.id DESC"
+        ).fetchall()
+        return self.send_json({"projects": [dict(row) for row in rows]})
+
+    def get_project(self, db, project_id):
+        project = db.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
+        if not project:
+            return self.send_json({"error": "Project not found."}, 404)
+        revisions = [dict(row) for row in db.execute(
+            "SELECT r.*,s.title AS source_title,s.local_path,s.document_sha256 "
+            "FROM schedule_revisions r JOIN evidence_sources s ON s.id=r.evidence_source_id "
+            "WHERE r.project_id=? ORDER BY r.imported_at DESC,r.id DESC", (project_id,)
+        )]
+        revision_ids = [row["id"] for row in revisions]
+        revision_id = revision_ids[0] if revision_ids else None
+        doors, sets, issues, runs = [], [], [], []
+        if revision_id:
+            for row in db.execute("SELECT * FROM scheduled_doors WHERE schedule_revision_id=? ORDER BY door_number,source_row_number", (revision_id,)):
+                door = dict(row)
+                door["assignments"] = []
+                for assignment in db.execute(
+                    "SELECT a.*,h.set_code,h.description AS set_description,h.source_notes,h.source_start_page,h.source_end_page "
+                    "FROM door_set_assignments a JOIN hardware_sets h ON h.id=a.hardware_set_id WHERE a.scheduled_door_id=? ORDER BY h.set_code", (door["id"],)
+                ):
+                    set_value = dict(assignment)
+                    set_value["items"] = Handler._set_items(db, assignment["hardware_set_id"])
+                    door["assignments"].append(set_value)
+                doors.append(door)
+            for row in db.execute("SELECT * FROM hardware_sets WHERE schedule_revision_id=? ORDER BY set_code,occurrence_number", (revision_id,)):
+                set_value = dict(row)
+                set_value["items"] = Handler._set_items(db, row["id"])
+                sets.append(set_value)
+            issues = [dict(row) for row in db.execute(
+                "SELECT * FROM import_review_issues WHERE schedule_revision_id=? ORDER BY CASE severity WHEN 'blocking' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,source_page, id", (revision_id,)
+            )]
+            runs = [dict(row) for row in db.execute(
+                "SELECT * FROM verification_runs WHERE schedule_revision_id=? ORDER BY created_at DESC,id DESC", (revision_id,)
+            )]
+            for run in runs:
+                run["summary"] = json.loads(run["summary_json"])
+        return self.send_json({"project": dict(project), "revisions": revisions, "revision_id": revision_id, "doors": doors, "sets": sets, "issues": issues, "runs": runs})
+
+    @staticmethod
+    def _set_items(db, set_id):
+        rows = db.execute("SELECT * FROM scheduled_items WHERE hardware_set_id=? ORDER BY source_page,source_row_number", (set_id,)).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["matches"] = []
+            for match in db.execute(
+                "SELECT m.id AS match_id,m.product_id,m.match_basis,m.review_status,m.match_rank,m.reviewer_notes,p.* "
+                "FROM product_matches m JOIN products p ON p.id=m.product_id WHERE m.scheduled_item_id=? "
+                "ORDER BY m.review_status='confirmed' DESC,m.match_rank,p.manufacturer,p.model",
+                (row["id"],),
+            ).fetchall():
+                item["matches"].append({
+                    "id": match["match_id"], "product_id": match["product_id"], "match_basis": match["match_basis"],
+                    "review_status": match["review_status"], "match_rank": match["match_rank"],
+                    "reviewer_notes": match["reviewer_notes"], "product": product_dict(match),
+                })
+            result.append(item)
+        return result
+
+    def get_verification_run(self, db, run_id):
+        run = db.execute("SELECT * FROM verification_runs WHERE id=?", (run_id,)).fetchone()
+        if not run:
+            return self.send_json({"error": "Verification run not found."}, 404)
+        doors = []
+        for row in db.execute(
+            "SELECT v.*,d.door_number,d.door_number_status,d.heading_number,d.description,d.source_page FROM verification_run_doors v "
+            "JOIN scheduled_doors d ON d.id=v.scheduled_door_id WHERE v.verification_run_id=? ORDER BY d.door_number,d.id", (run_id,)
+        ):
+            value = dict(row)
+            value["product_ids"] = json.loads(value.pop("product_ids_json"))
+            value["result"] = json.loads(value.pop("result_json"))
+            doors.append(value)
+        return self.send_json({"run": {**dict(run), "summary": json.loads(run["summary_json"])}, "doors": doors})
+
+    def delete_project_records(self, db, project_id):
+        project = db.execute("SELECT id,name FROM projects WHERE id=?", (project_id,)).fetchone()
+        if not project:
+            return {"error": "Project not found."}, 404, []
+        sources = [dict(row) for row in db.execute(
+            "SELECT id,local_path FROM evidence_sources WHERE project_id=? AND source_type='hardware_schedule'", (project_id,)
+        )]
+        db.execute("DELETE FROM projects WHERE id=?", (project_id,))
+        files_to_remove = []
+        for source in sources:
+            linked = db.execute(
+                "SELECT (SELECT COUNT(*) FROM product_evidence WHERE evidence_source_id=?) + "
+                "(SELECT COUNT(*) FROM product_match_evidence WHERE evidence_source_id=?)",
+                (source["id"], source["id"]),
+            ).fetchone()[0]
+            if linked:
+                continue
+            db.execute("DELETE FROM evidence_sources WHERE id=?", (source["id"],))
+            if source["local_path"] and not db.execute("SELECT 1 FROM evidence_sources WHERE local_path=? LIMIT 1", (source["local_path"],)).fetchone():
+                candidate = (SCHEDULE_UPLOAD_DIR / Path(source["local_path"]).name).resolve()
+                if candidate.is_relative_to(SCHEDULE_UPLOAD_DIR.resolve()) and candidate.is_file():
+                    files_to_remove.append(candidate)
+        return {"deleted": True, "project_name": project["name"]}, 200, files_to_remove
+
+    def get_schedule_pages(self, db, revision_id):
+        query = parse_qs(urlparse(self.path).query)
+        try:
+            page = max(1, int(query.get("page", ["1"])[0]))
+        except ValueError:
+            return self.send_json({"error": "Page number must be an integer."}, 400)
+        row = db.execute("SELECT extracted_text FROM schedule_pages WHERE schedule_revision_id=? AND page_number=?", (revision_id, page)).fetchone()
+        if not row:
+            return self.send_json({"error": "Schedule page not found."}, 404)
+        return self.send_json({"revision_id": revision_id, "page_number": page, "text": row["extracted_text"]})
+
+    def get_schedule_file(self, db, source_id):
+        source = db.execute("SELECT local_path,title FROM evidence_sources WHERE id=? AND source_type='hardware_schedule'", (source_id,)).fetchone()
+        if not source:
+            return self.send_json({"error": "Schedule file not found."}, 404)
+        file_path = (SCHEDULE_UPLOAD_DIR / Path(source["local_path"]).name).resolve()
+        upload_root = SCHEDULE_UPLOAD_DIR.resolve()
+        if not file_path.is_relative_to(upload_root) or not file_path.is_file():
+            return self.send_json({"error": "The stored schedule file is unavailable."}, 404)
+        return self.send_bytes(file_path.read_bytes(), "application/pdf", file_path.name)
+
+    def import_schedule(self, db, data):
+        if not isinstance(data, dict):
+            return self.send_json({"error": "Schedule import must be an object."}, 400)
+        name = str(data.get("name", "")).strip()
+        filename = Path(str(data.get("filename", "schedule.pdf"))).name
+        encoded = data.get("file_base64", "")
+        if not name or not encoded:
+            return self.send_json({"error": "Enter a project name and choose a PDF schedule."}, 400)
+        if filename.casefold().endswith(".pdf") is False:
+            return self.send_json({"error": "Upload a PDF hardware schedule."}, 400)
+        try:
+            pdf_bytes = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error):
+            return self.send_json({"error": "The uploaded PDF data could not be decoded."}, 400)
+        if len(pdf_bytes) > 50 * 1024 * 1024:
+            return self.send_json({"error": "PDF schedules must be 50 MB or smaller."}, 413)
+        if not pdf_bytes.startswith(b"%PDF-"):
+            return self.send_json({"error": "The selected file is not a valid PDF."}, 400)
+        try:
+            extracted = extract_schedule(pdf_bytes)
+        except Exception as error:
+            return self.send_json({"error": f"Could not read this PDF: {error}"}, 400)
+        if len(extracted["pages"]) > 2000:
+            return self.send_json({"error": "Schedules over 2,000 pages are not supported by this local importer."}, 413)
+
+        digest = hashlib.sha256(pdf_bytes).hexdigest()
+        SCHEDULE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        relative_path = Path("data") / "schedules" / f"{digest}.pdf"
+        target = SCHEDULE_UPLOAD_DIR / relative_path.name
+        if not target.exists():
+            target.write_bytes(pdf_bytes)
+        project_code = str(data.get("project_code", "")).strip()
+        schedule_number = str(data.get("schedule_number", "")).strip()
+        revision_label = str(data.get("revision_label", "")).strip() or "Unlabeled revision"
+        project_cur = db.execute(
+            "INSERT INTO projects(project_code,name,client_name,site_address) VALUES (?,?,?,?)",
+            (project_code, name, str(data.get("client_name", "")).strip(), str(data.get("site_address", "")).strip()),
+        )
+        project_id = project_cur.lastrowid
+        metadata = {"page_count": len(extracted["pages"]), "original_filename": filename, "parser": "door-index-aware-reviewed-v3"}
+        source_cur = db.execute(
+            "INSERT INTO evidence_sources(project_id,source_type,title,local_path,document_sha256,revision_label,metadata_json) VALUES (?,'hardware_schedule',?,?,?,?,?)",
+            (project_id, filename, relative_path.as_posix(), digest, revision_label, json.dumps(metadata)),
+        )
+        source_id = source_cur.lastrowid
+        revision_cur = db.execute(
+            "INSERT INTO schedule_revisions(project_id,schedule_number,revision_label,evidence_source_id,status,parser_name,parser_version,notes) VALUES (?,?,?,?,'under_review','door_index_aware','3',?)",
+            (project_id, schedule_number, revision_label, source_id, "Text extraction is heuristic. Review the original PDF, extracted rows, and flagged fields before relying on results."),
+        )
+        revision_id = revision_cur.lastrowid
+        db.executemany(
+            "INSERT INTO schedule_pages(schedule_revision_id,page_number,extracted_text) VALUES (?,?,?)",
+            [(revision_id, page["page_number"], page["text"]) for page in extracted["pages"]],
+        )
+        set_ids = {}
+        for set_row in extracted["sets"]:
+            cur = db.execute(
+                "INSERT INTO hardware_sets(schedule_revision_id,set_code,description,source_start_page,source_end_page,source_notes,raw_source_text) VALUES (?,?,?,?,?,?,?)",
+                (revision_id, set_row["set_code"], set_row["description"], set_row["start_page"], set_row["end_page"], set_row["notes"], set_row["notes"] or set_row["description"]),
+            )
+            set_ids[set_row["set_code"].casefold()] = cur.lastrowid
+        door_ids = {}
+        for door in extracted["doors"]:
+            cursor = db.execute(
+                "INSERT OR IGNORE INTO scheduled_doors(schedule_revision_id,source_row_number,door_number,door_number_status,heading_number,description,hand,raw_source_text,source_page) VALUES (?,?,?,?,?,?,?,?,?)",
+                (revision_id, door["source_row_number"], door["door_number"], door.get("door_number_status", "known"), door["heading_number"], door["description"], door.get("hand", ""), door["raw"], door["page"]),
+            )
+            door_id = cursor.lastrowid
+            if not door_id:
+                match = db.execute("SELECT id FROM scheduled_doors WHERE schedule_revision_id=? AND source_row_number=?", (revision_id, door["source_row_number"])).fetchone()
+                door_id = match["id"]
+            door_ids[door_id] = door
+            set_id = set_ids.get(door["heading_number"].casefold()) if door["heading_number"] else None
+            if set_id:
+                db.execute("INSERT OR IGNORE INTO door_set_assignments(scheduled_door_id,hardware_set_id,source_page,raw_source_text) VALUES (?,?,?,?)", (door_id, set_id, door["page"], door["raw"]))
+        for item in extracted["items"]:
+            set_id = set_ids.get(item["set_code"].casefold())
+            if not set_id:
+                continue
+            cur = db.execute(
+                "INSERT OR IGNORE INTO scheduled_items(hardware_set_id,source_row_number,quantity_for_heading,units,sku,product_text,description_text,source_page,raw_source_text) VALUES (?,?,?,?,?,?,?,?,?)",
+                (set_id, item["source_row_number"], item["quantity"], item["units"], item["sku"], item["description"], item["description"], item["page"], item["raw"]),
+            )
+            item_id = cur.lastrowid
+            if not item_id:
+                row = db.execute("SELECT id FROM scheduled_items WHERE hardware_set_id=? AND source_row_number=?", (set_id, item["source_row_number"])).fetchone()
+                item_id = row["id"]
+            for product in db.execute("SELECT id,model FROM products WHERE active=1 ORDER BY model"):
+                model = str(product["model"]).strip()
+                if len(model) < 4 or model.casefold() not in item["raw"].casefold():
+                    continue
+                db.execute(
+                    "INSERT OR IGNORE INTO product_matches(scheduled_item_id,product_id,match_basis,review_status,match_rank,reviewer_notes) VALUES (?,?,'exact_model','candidate',1,'Automatic text match; confirm against schedule and manufacturer source.')",
+                    (item_id, product["id"]),
+                )
+        for issue in extracted["issues"]:
+            db.execute(
+                "INSERT INTO import_review_issues(schedule_revision_id,issue_code,severity,message,source_page) VALUES (?,?,?,?,?)",
+                (revision_id, issue["code"], issue["severity"], issue["message"], issue["page"]),
+            )
+        if extracted["doors"] and not any(door["heading_number"] for door in extracted["doors"]):
+            db.execute(
+                "INSERT INTO import_review_issues(schedule_revision_id,issue_code,severity,message) VALUES (?,'door_set_assignments_not_recognized','warning',?)",
+                (revision_id, "Door rows were found but their hardware-set assignments were not confidently detected. Review assignments against the source schedule."),
+            )
+        return self.send_json({
+            "project_id": project_id, "revision_id": revision_id, "source_id": source_id,
+            "counts": {"pages": len(extracted["pages"]), "doors": len(extracted["doors"]), "sets": len(extracted["sets"]), "items": len(extracted["items"]), "review_issues": len(extracted["issues"])},
+            "message": "Schedule imported for review. Verify extracted rows and matches against the original PDF before running checks.",
+        }, 201)
+
+    def add_project_door(self, db, data):
+        project_id = data.get("project_id")
+        revision = db.execute("SELECT id FROM schedule_revisions WHERE project_id=? ORDER BY imported_at DESC,id DESC LIMIT 1", (project_id,)).fetchone()
+        if not revision:
+            return self.send_json({"error": "Import a schedule before adding doors."}, 404)
+        door_number = str(data.get("door_number", "")).strip()
+        number_status = data.get("door_number_status", "known")
+        if number_status not in {"known", "unknown"}:
+            return self.send_json({"error": "Choose whether the door number is known or unknown."}, 400)
+        row_number = -int(db.execute("SELECT COUNT(*)+1 FROM scheduled_doors WHERE schedule_revision_id=?", (revision["id"],)).fetchone()[0])
+        if number_status == "unknown":
+            door_number = f"Unknown · manual {abs(row_number)}"
+        elif not door_number:
+            return self.send_json({"error": "Enter a door number."}, 400)
+        set_code = str(data.get("heading_number", "")).strip()
+        set_row = db.execute("SELECT id FROM hardware_sets WHERE schedule_revision_id=? AND set_code=? ORDER BY occurrence_number LIMIT 1", (revision["id"], set_code)).fetchone() if set_code else None
+        if set_code and not set_row:
+            return self.send_json({"error": "Create or choose a hardware set before assigning it to a door."}, 400)
+        cur = db.execute(
+            "INSERT INTO scheduled_doors(schedule_revision_id,source_row_number,door_number,door_number_status,heading_number,description,hand,raw_source_text,source_page) VALUES (?,?,?,?,?,?,?,?,?)",
+            (revision["id"], row_number, door_number, number_status, set_code, str(data.get("description", "")).strip(), str(data.get("hand", "")).strip(), "Manually added during schedule review.", 1),
+        )
+        if set_row:
+            db.execute("INSERT INTO door_set_assignments(scheduled_door_id,hardware_set_id,raw_source_text) VALUES (?,?,?)", (cur.lastrowid, set_row["id"], "Manually assigned during schedule review."))
+        return self.send_json({"id": cur.lastrowid, "door_number": door_number}, 201)
+
+    def update_scheduled_door_number(self, db, door_id, data):
+        door = db.execute("SELECT id,door_number,door_number_status,source_page FROM scheduled_doors WHERE id=?", (door_id,)).fetchone()
+        if not door:
+            return self.send_json({"error": "Scheduled door not found."}, 404)
+        status = data.get("door_number_status", "known")
+        if status not in {"known", "unknown"}:
+            return self.send_json({"error": "Choose whether the door number is known or unknown."}, 400)
+        number = str(data.get("door_number", "")).strip()
+        if status == "unknown":
+            number = f"Unknown · page {door['source_page']}"
+        elif not number:
+            return self.send_json({"error": "Enter the door number, or mark it unknown."}, 400)
+        db.execute("UPDATE scheduled_doors SET door_number=?,door_number_status=? WHERE id=?", (number, status, door_id))
+        return self.send_json({"id": door_id, "door_number": number, "door_number_status": status})
+
+    def add_project_set(self, db, data):
+        project_id = data.get("project_id")
+        revision = db.execute("SELECT id FROM schedule_revisions WHERE project_id=? ORDER BY imported_at DESC,id DESC LIMIT 1", (project_id,)).fetchone()
+        code = str(data.get("set_code", "")).strip()
+        if not revision or not code:
+            return self.send_json({"error": "Import a schedule and enter a hardware-set code."}, 400)
+        try:
+            cur = db.execute("INSERT INTO hardware_sets(schedule_revision_id,set_code,description,source_notes) VALUES (?,?,?,?)", (revision["id"], code, str(data.get("description", "")).strip(), "Manually added during schedule review."))
+        except sqlite3.IntegrityError:
+            return self.send_json({"error": "That hardware-set code already exists in this revision."}, 409)
+        return self.send_json({"id": cur.lastrowid, "set_code": code}, 201)
+
+    def add_schedule_item(self, db, set_id, data):
+        hardware_set = db.execute("SELECT id FROM hardware_sets WHERE id=?", (set_id,)).fetchone()
+        product_text = str(data.get("product_text", "")).strip()
+        if not hardware_set or not product_text:
+            return self.send_json({"error": "Choose a hardware set and enter the scheduled item text."}, 400)
+        try:
+            quantity = float(data.get("quantity", 1))
+            source_page = max(1, int(data.get("source_page", 1) or 1))
+        except (TypeError, ValueError):
+            return self.send_json({"error": "Enter a valid quantity and source page."}, 400)
+        if quantity <= 0:
+            return self.send_json({"error": "Quantity must be greater than zero."}, 400)
+        row_number = -(db.execute(
+            "SELECT COUNT(*)+1 FROM scheduled_items WHERE hardware_set_id=? AND source_row_number<0", (set_id,)
+        ).fetchone()[0])
+        cur = db.execute(
+            "INSERT INTO scheduled_items(hardware_set_id,source_row_number,quantity_for_heading,units,sku,product_text,description_text,source_page,raw_source_text) VALUES (?,?,?,?,?,?,?,?,?)",
+            (set_id, row_number, quantity, str(data.get("units", "EA")).strip() or "EA", str(data.get("sku", "")).strip(), product_text, product_text, source_page, "Manually added during schedule review."),
+        )
+        return self.send_json({"id": cur.lastrowid}, 201)
+
+    def save_schedule_match(self, db, data):
+        try:
+            item_id, product_id = int(data.get("scheduled_item_id")), int(data.get("product_id"))
+        except (TypeError, ValueError):
+            return self.send_json({"error": "Choose a scheduled item and catalog product."}, 400)
+        status = data.get("review_status", "confirmed")
+        if status not in {"candidate", "confirmed", "rejected"}:
+            return self.send_json({"error": "Choose candidate, confirmed, or rejected."}, 400)
+        if not db.execute("SELECT 1 FROM scheduled_items WHERE id=?", (item_id,)).fetchone() or not db.execute("SELECT 1 FROM products WHERE id=? AND active=1", (product_id,)).fetchone():
+            return self.send_json({"error": "The scheduled item or catalog product was not found."}, 404)
+        try:
+            if status == "confirmed":
+                db.execute("UPDATE product_matches SET review_status='rejected',reviewer_notes='Replaced by a newer confirmed match.',reviewed_at=CURRENT_TIMESTAMP WHERE scheduled_item_id=? AND review_status='confirmed' AND product_id<>?", (item_id, product_id))
+            db.execute(
+                "INSERT INTO product_matches(scheduled_item_id,product_id,match_basis,review_status,reviewer_notes,reviewed_at) VALUES (?,?, 'manual_candidate',?,?,CURRENT_TIMESTAMP) "
+                "ON CONFLICT(scheduled_item_id,product_id) DO UPDATE SET review_status=excluded.review_status,reviewer_notes=excluded.reviewer_notes,reviewed_at=CURRENT_TIMESTAMP",
+                (item_id, product_id, status, str(data.get("reviewer_notes", "")).strip()),
+            )
+        except sqlite3.IntegrityError:
+            return self.send_json({"error": "Another catalog product is already confirmed for this scheduled line."}, 409)
+        return self.send_json({"saved": True, "review_status": status})
+
+    def verify_project(self, db, project_id, data):
+        project = db.execute("SELECT id FROM projects WHERE id=?", (project_id,)).fetchone()
+        revision = db.execute("SELECT id FROM schedule_revisions WHERE project_id=? ORDER BY imported_at DESC,id DESC LIMIT 1", (project_id,)).fetchone()
+        if not project or not revision:
+            return self.send_json({"error": "Project or imported schedule was not found."}, 404)
+        doors = db.execute("SELECT * FROM scheduled_doors WHERE schedule_revision_id=? ORDER BY door_number,id", (revision["id"],)).fetchall()
+        if not doors:
+            return self.send_json({"error": "Add or extract door rows before running verification."}, 400)
+        run_cur = db.execute("INSERT INTO verification_runs(project_id,schedule_revision_id,run_name) VALUES (?,?,?)", (project_id, revision["id"], str(data.get("run_name", "")).strip()))
+        run_id = run_cur.lastrowid
+        counts = {}
+        for door in doors:
+            set_ids = [row["hardware_set_id"] for row in db.execute("SELECT hardware_set_id FROM door_set_assignments WHERE scheduled_door_id=?", (door["id"],))]
+            confirmed_ids = []
+            if set_ids:
+                placeholders = ",".join("?" for _ in set_ids)
+                confirmed_ids = [row["product_id"] for row in db.execute(
+                    f"SELECT DISTINCT m.product_id FROM scheduled_items i JOIN product_matches m ON m.scheduled_item_id=i.id WHERE i.hardware_set_id IN ({placeholders}) AND m.review_status='confirmed' ORDER BY m.product_id", set_ids
+                )]
+            opening = {}
+            if door["leaf_width_1_mm"] is not None:
+                opening["width_in"] = round(door["leaf_width_1_mm"] / 25.4, 2)
+            if door["height_mm"] is not None:
+                opening["height_in"] = round(door["height_mm"] / 25.4, 2)
+            if door["door_material"]:
+                opening["door_material"] = door["door_material"]
+            if door["frame_material"]:
+                opening["frame_material"] = door["frame_material"]
+            if door["fire_rating"]:
+                opening["fire_rated"] = "yes"
+            if len(confirmed_ids) >= 2:
+                harness = _JsonHarness()
+                Handler.check_assembly(harness, {"product_ids": confirmed_ids, "opening": opening})
+                result = harness.response[1]
+            else:
+                result = {"status": "unverified", "message": "At least two scheduled lines need confirmed catalog matches before this door can be checked.", "estimate": {"score": None, "confidence": 0, "verdict": "unverified", "checks_in_average": 0}, "findings": [], "subset_checks": []}
+            status = result.get("status", "unverified")
+            counts[status] = counts.get(status, 0) + 1
+            db.execute(
+                "INSERT INTO verification_run_doors(verification_run_id,scheduled_door_id,product_ids_json,result_json) VALUES (?,?,?,?)",
+                (run_id, door["id"], json.dumps(confirmed_ids), json.dumps(result)),
+            )
+        summary = {"door_count": len(doors), "status_counts": counts}
+        db.execute("UPDATE verification_runs SET summary_json=? WHERE id=?", (json.dumps(summary), run_id))
+        return self.send_json({"run_id": run_id, "summary": summary}, 201)
 
     def import_evidence_bundle(self, db, data):
         if not isinstance(data, dict):
@@ -376,7 +813,38 @@ class Handler(BaseHTTPRequestHandler):
                 if candidate_ids == selected_ids and not exact_applies:
                     exact_applies = True
                     assertion = candidate
-            if not exact_applies:
+            if exact_applies:
+                # An exact whole-assembly tuple subsumes its smaller documented
+                # tuples. Keep the report focused on the assertion for the
+                # complete selected set instead of counting the subset twice.
+                tuple_assertions = [assertion]
+                findings = [finding for finding in findings if finding.get("finding_type") != "assembly_tuple"]
+                findings.append({
+                    "status": assertion["outcome"],
+                    "finding_type": "assembly_tuple",
+                    "rationale": assertion["rationale"],
+                    "source_title": assertion["source_title"],
+                    "source_url": assertion["source_url"],
+                    "product_ids": assertion["product_ids"],
+                })
+            subset_checks = assembly_subset_checks(db, products, context) if len(products) > 2 else []
+            subset_conflicts = [
+                check for check in subset_checks
+                if check["subset_size"] < len(products)
+                and check["status"] == "incompatible"
+                and trusted_evidence(check["evidence_status"])
+            ]
+            for check in subset_conflicts:
+                findings.append({
+                    "status": check["status"],
+                    "finding_type": "subset_assertion_conflict",
+                    "rationale": check["rationale"],
+                    "source_title": check["source_title"],
+                    "source_url": check["source_url"],
+                    "product_ids": check["product_ids"],
+                    "evidence_status": check["evidence_status"],
+                })
+            if len(products) == 2:
                 for left_index, product_a in enumerate(products):
                     for product_b in products[left_index + 1:]:
                         if not pair_is_applicable(product_a, product_b, db):
@@ -384,8 +852,12 @@ class Handler(BaseHTTPRequestHandler):
                         evaluation = pair_evaluation(db, product_a, product_b, context)
                         findings.append({"product_a": product_a, "product_b": product_b, **evaluation})
                         pair_estimates.append(pair_estimate(db, product_a, product_b, context))
-            findings.extend(opening_fit_findings(products, opening))
-            findings.extend(power_path_findings(products))
+            findings.extend(
+                {**finding, "finding_type": finding.get("finding_type", "opening_fit")}
+                for finding in opening_fit_findings(products, opening)
+            )
+            if not exact_applies:
+                findings.extend(power_path_findings(products))
             if len(products) == 1 and not findings:
                 findings.append({"status": "unverified", "product_a": products[0], "rationale": "No opening-fit constraint is documented for this selected product category."})
             if not all(trusted_evidence(product["evidence_status"]) for product in products):
@@ -402,16 +874,37 @@ class Handler(BaseHTTPRequestHandler):
                 finding for finding in findings
                 if (finding.get("product_a") and not finding.get("product_b"))
                 or finding.get("finding_type") == "power_path"
+                or finding.get("finding_type") == "subset_assertion_conflict"
             ]
-            estimate = assembly_estimate(pair_estimates, assembly_level_findings, tuple_assertions)
+            estimate_assertions = tuple_assertions if exact_applies else []
+            if exact_applies:
+                # The exact whole-group assertion is the primary assembly
+                # result. Do not dilute it with unresolved opening-fit data;
+                # independently documented conflicts still take precedence.
+                independent_conflicts = [
+                    finding for finding in findings
+                    if finding.get("status") == "incompatible"
+                    and finding.get("finding_type") != "assembly_tuple"
+                ]
+                estimate = assembly_estimate([], independent_conflicts, estimate_assertions)
+            else:
+                estimate = assembly_estimate(pair_estimates, assembly_level_findings, estimate_assertions)
+            if len(products) > 2 and not exact_applies and status == "compatible":
+                status = "unverified"
+            if len(products) > 2 and not exact_applies and estimate.get("verdict") in {"compatible", "likely_compatible"}:
+                estimate["verdict"] = "unverified"
+                estimate["message"] = "No exact assertion covers the complete selected assembly; evidence for smaller subsets does not prove the full combination."
             if estimate.get("score") is not None:
                 status = estimate["verdict"]
-            return self.send_json({"status": status, "message": estimate["message"] if estimate.get("score") is not None else messages[status], "estimate": estimate, "assertion": assertion if exact_applies else None, "products": products, "findings": findings})
+            return self.send_json({"status": status, "message": estimate["message"] if estimate.get("score") is not None else messages[status], "estimate": estimate, "assertion": assertion if exact_applies else None, "products": products, "findings": findings, "subset_checks": subset_checks})
 
     def do_PUT(self):
         path = urlparse(self.path).path
         data = self.read_json()
         parts = path.strip("/").split("/")
+        if len(parts) == 3 and parts[0] == "api" and parts[1] == "scheduled-doors" and parts[2].isdigit():
+            with connect() as db:
+                return self.update_scheduled_door_number(db, int(parts[2]), data)
         if len(parts) == 3 and parts[0] == "api" and parts[1] == "products":
             with connect() as db:
                 try:
@@ -454,6 +947,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         parts = urlparse(self.path).path.strip("/").split("/")
+        if len(parts) == 3 and parts[0] == "api" and parts[1] == "projects" and parts[2].isdigit():
+            with connect() as db:
+                result, status, files_to_remove = self.delete_project_records(db, int(parts[2]))
+            for file_path in files_to_remove:
+                try:
+                    file_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            return self.send_json(result, status)
         if len(parts) == 3 and parts[0] == "api":
             if parts[1] == "products":
                 with connect() as db:

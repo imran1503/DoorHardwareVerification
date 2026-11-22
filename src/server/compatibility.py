@@ -1,6 +1,7 @@
 """Evidence-backed product-pair compatibility evaluation."""
 import json
 import re
+from itertools import combinations
 
 from .catalog import INTERACTION_PAIRS
 from .database import (
@@ -515,6 +516,8 @@ def _finding_estimate(finding):
         confidence = min(confidence, 25)
     elif finding.get("status") in {"compatible", "incompatible"} and product and trusted_product_record(product):
         confidence = max(confidence, _evidence_confidence(product.get("evidence_status")))
+    elif finding.get("status") in {"compatible", "incompatible"} and trusted_evidence(finding.get("evidence_status")):
+        confidence = max(confidence, _evidence_confidence(finding.get("evidence_status")))
     return {"compatibility_score": score, "confidence_score": confidence, "adjusted_score": round(50 + (score - 50) * confidence / 100, 1), "status": finding.get("status", "unverified")}
 
 
@@ -562,12 +565,65 @@ def assembly_estimate(pair_estimates, extra_findings=(), assertion=None):
         "checks_in_average": len(factors),
         "verdict": verdict,
         "message": message,
-        "method": "Provisional model: the assembly estimate combines applicable selected-product interactions, matching multi-product tuple records, opening-fit checks, and shared-power findings. Results with weaker support are pulled toward neutral (50). A sourced tuple applies only to its listed products and conditions.",
+        "method": "Provisional model: standalone two-product checks use the exact pair evaluator; larger assemblies use exact subset assertions, opening-fit checks, and shared-power findings without inferring pair results. Weaker support is pulled toward neutral (50). A sourced tuple applies only to its listed products and conditions.",
     }
 
 
 def _product_summary(product):
     return {key: product.get(key) for key in ("id", "category", "manufacturer", "model", "name", "evidence_status", "source_title", "source_url")}
+
+
+def assembly_subset_checks(db, products, context=None):
+    """List every 2+-product subset, using only an exact assertion per subset.
+
+    Multi-product assembly reports must not fill these rows with inferred
+    pair-rule results. Missing subset assertions remain visible evidence gaps.
+    """
+    context = context or {}
+    products_by_id = {product["id"]: product for product in products}
+    assertions_by_ids = {}
+    for row in db.execute("SELECT * FROM compatibility_assertions ORDER BY updated_at DESC, id DESC"):
+        assertion = assertion_dict(row)
+        key = tuple(sorted(assertion["product_ids"]))
+        assertions_by_ids.setdefault(key, []).append(assertion)
+
+    checks = []
+    for size in range(2, len(products) + 1):
+        for subset in combinations(products, size):
+            subset_ids = tuple(sorted(product["id"] for product in subset))
+            candidates = assertions_by_ids.get(subset_ids, [])
+            matching = [
+                assertion for assertion in candidates
+                if all(context.get(key) == value for key, value in assertion["conditions"].items())
+            ]
+            assertion = matching[0] if matching else candidates[0] if candidates else None
+            products_documented = all(trusted_product_record(product) for product in subset)
+            if assertion and not matching:
+                status = "conditional"
+                rationale = "A recorded assertion exists for this exact subset, but its stated conditions do not match the current assembly context."
+            elif assertion and (not trusted_evidence(assertion["evidence_status"]) or not products_documented):
+                status = "unverified"
+                rationale = assertion["rationale"] or "This exact subset assertion or one of its product records still needs verified evidence."
+            elif assertion:
+                status = assertion["outcome"]
+                rationale = assertion["rationale"] or "A sourced assertion covers this exact subset."
+            else:
+                status = "unverified"
+                rationale = "No exact compatibility assertion is recorded for this subset."
+            checks.append({
+                "subset_size": size,
+                "product_ids": list(subset_ids),
+                "products": [_product_summary(products_by_id[product_id]) for product_id in subset_ids],
+                "status": status,
+                "evidence_status": assertion["evidence_status"] if assertion else "unverified",
+                "rationale": rationale,
+                "source_title": assertion["source_title"] if assertion else "",
+                "source_url": assertion["source_url"] if assertion else "",
+                "conditions": assertion["conditions"] if assertion else {},
+                "assertion_id": assertion["id"] if assertion else None,
+                "has_exact_assertion": bool(assertion),
+            })
+    return checks
 
 
 _coverage_cache = {"signature": None, "rows": None, "summary": None}
@@ -584,11 +640,39 @@ def coverage_rows(db):
     if signature == _coverage_cache["signature"] and _coverage_cache["rows"] is not None:
         return _coverage_cache["rows"]
     products = [product_dict(row) for row in db.execute("SELECT * FROM products WHERE active=1 ORDER BY category,manufacturer,model")]
+    product_by_id = {product["id"]: product for product in products}
+    assembly_assertions = []
+    for assertion_row in db.execute(
+        "SELECT * FROM compatibility_assertions WHERE evidence_status IN ('manufacturer_document','field_verified','company_approved') ORDER BY updated_at DESC, id DESC"
+    ):
+        assertion = assertion_dict(assertion_row)
+        if len(assertion["product_ids"]) < 3:
+            continue
+        assertion["products"] = [
+            _product_summary(product_by_id[product_id])
+            for product_id in assertion["product_ids"]
+            if product_id in product_by_id
+        ]
+        if len(assertion["products"]) >= 3:
+            assembly_assertions.append(assertion)
     rows = []
     for index, product_a in enumerate(products):
         for product_b in products[index + 1:]:
             estimate = pair_estimate(db, product_a, product_b)
-            rows.append({"product_a": _product_summary(product_a), "product_b": _product_summary(product_b), **estimate})
+            pair_ids = {product_a["id"], product_b["id"]}
+            related_assembly_evidence = [
+                {
+                    "outcome": assertion["outcome"],
+                    "rationale": assertion["rationale"],
+                    "source_title": assertion["source_title"],
+                    "source_url": assertion["source_url"],
+                    "evidence_status": assertion["evidence_status"],
+                    "products": assertion["products"],
+                }
+                for assertion in assembly_assertions
+                if pair_ids.issubset(set(assertion["product_ids"]))
+            ]
+            rows.append({"product_a": _product_summary(product_a), "product_b": _product_summary(product_b), "assembly_evidence": related_assembly_evidence, **estimate})
     _coverage_cache.update(signature=signature, rows=rows, summary=coverage_summary(rows))
     return rows
 
