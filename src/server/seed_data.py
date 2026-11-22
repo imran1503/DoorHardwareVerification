@@ -16,6 +16,21 @@ def seed_manufacturer_product_data(db):
                 (fact["name"], json.dumps(fact["specifications"]), fact["source_title"], fact["source_url"], fact["notes"], row["id"]),
             )
 
+    # Add newly verified ED100 interfaces to existing manufacturer-sourced
+    # records without replacing other specification fields or user edits.
+    ed100_fact = MANUFACTURER_PRODUCT_FACTS[("dormakaba", "ED100")]
+    ed100 = db.execute("SELECT id,specifications,source_url FROM products WHERE category='automatic_operator' AND manufacturer='dormakaba' AND model='ED100' AND source_title=?", (ed100_fact["source_title"],)).fetchone()
+    if ed100:
+        specifications = json.loads(ed100["specifications"] or "{}")
+        changed = False
+        for key in ("line_power", "activation_inputs", "accessory_power_output", "locking_device_interface"):
+            if key not in specifications:
+                specifications[key] = ed100_fact["specifications"][key]
+                changed = True
+        local_source = ed100["source_url"].startswith("https://my.dormakaba.com/medias/")
+        if changed or local_source:
+            db.execute("UPDATE products SET specifications=?,source_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", (json.dumps(specifications), ed100_fact["source_url"] if local_source else ed100["source_url"], ed100["id"]))
+
     norton_source = MANUFACTURER_PRODUCT_FACTS[("Norton Rixson", "5800 ADAEZ Pro")]
     norton_base_specs = norton_source["specifications"]
     for model, name, side, hardwire_kit in NORTON_5800_VARIANTS:
@@ -68,18 +83,18 @@ def seed_manufacturer_product_data(db):
             "supply_options": ["12VDC", "24VDC"], "peak_current_ma": 45,
             "output_contact_type": "dry_contact", "contact_rating_a": 1,
             "contact_rating_vdc": 30,
-        }, "CX-WC17SLVR Restroom Control Kit Manual", "https://www.camdencontrols.com/pipelines/resource/11374_WC17SLVR_Restroom_Control_Manual_R2.pdf", "Exact switch model listed as a CX-WC17SLVR kit component; use the manual's specific wiring and mode setup."),
+        }, "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)", "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=1", "Exact switch model listed as a CX-WC17SLVR kit component; use the manual's specific wiring and mode setup."),
         ("activation_device", "CM-221", "CM-221 built-in hands-free switch", {
             "record_scope": "exact_model", "activation_interface": "hands_free_infrared",
             "adjustable_range_in": [2, 8], "adjustable_delay_seconds": [0.5, 20],
             "included_in_kit": "CX-WC17SLVR",
-        }, "CX-WC17SLVR Restroom Control Kit Manual", "https://www.camdencontrols.com/pipelines/resource/11374_WC17SLVR_Restroom_Control_Manual_R2.pdf", "The current kit manual states this hands-free switch is built into the CX-WC17SLVR kit; review its separate instructions for setup."),
+        }, "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)", "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=1", "The current kit manual states this hands-free switch is built into the CX-WC17SLVR kit; review its separate instructions for setup."),
         ("washroom_control", "CX-WC17SLVR", "CX-WC17SLVR Restroom Control Kit", {
             "record_scope": "exact_kit", "included_models": ["CX-33", "CM-8536VR x3", "CM-221"],
             "included_components": ["surface mounting contact", "occupied/locked signs"],
             "documented_modes": [7, 8], "controller_model": "CX-33",
             "switch_model": "CM-8536VR",
-        }, "CX-WC17SLVR Restroom Control Kit Manual", "https://www.camdencontrols.com/pipelines/resource/11374_WC17SLVR_Restroom_Control_Manual_R2.pdf", "Use the exact included components and the documented mode/wiring diagram; field operator and locking hardware must be selected separately."),
+        }, "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)", "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=1", "Use the exact included components and the documented mode/wiring diagram; field operator and locking hardware must be selected separately."),
         ("washroom_control", "CX-WC16-PS-M1", "CX-WC16-PS-M1 Restroom Control Kit with Power Supply", {
             "record_scope": "exact_kit", "controller_model": "60-40E035",
             "supply_input_options": ["12VAC", "24VAC", "12VDC", "24VDC"],
@@ -174,8 +189,8 @@ def seed_manufacturer_product_data(db):
                 "output_voltage": "24VAC",
                 "output_va": 40,
             },
-            "CX-WC17SLVR Series Restroom Kit Installation Instructions",
-            "https://www.camdencontrols.com/pipelines/resource/1021_WC17SLVR_Restroom_Control_Manual_R2.pdf",
+            "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)",
+            "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=8",
             "Camden lists the CX-TRX-4024 as a required 40VA, 24VAC transformer for the CX-WC17SLVR and CX-WEC10K2 equipment package; it is the documented AC input source for the CX-PS13.",
         ),
     ]
@@ -183,6 +198,62 @@ def seed_manufacturer_product_data(db):
         db.execute(
             "INSERT INTO products(category,manufacturer,model,name,specifications,source_title,source_url,evidence_status,notes) VALUES ('power_supply','Camden Controls',?,?,?,?,?,'manufacturer_document',?) ON CONFLICT(category,manufacturer,model) DO UPDATE SET name=excluded.name,specifications=excluded.specifications,source_title=excluded.source_title,source_url=excluded.source_url,evidence_status='manufacturer_document',notes=excluded.notes,updated_at=CURRENT_TIMESTAMP",
             (model, name, json.dumps(specs), source_title, source_url, notes),
+        )
+
+    # Exact Dormakaba models found in the Belleville schedule's electrified sets.
+    dormakaba_schedule_products = [
+        (
+            "exit_device", "626QED111-MLR", "Dormakaba QED111 rim exit device with MLR, 626 satin chrome",
+            {
+                "record_scope": "exact_configuration", "manufacturer_family": "QED 100 Series",
+                "device_type": "rim_exit_device", "function": "rim_hex_dog", "finish": "626 satin chrome",
+                "electrification": "MLR motorized latch retraction", "power_input": {
+                    "voltage": "24VDC +/- 10%", "max_inrush_a": 1, "max_holding_current_a": 0.4,
+                    "supply_type": "filtered_and_regulated", "polarity": "non_polarized",
+                },
+                "conductors": {"power_wires": 2, "optional_feedback_wires": 2},
+                "wire_run_by_gauge_ft": {"22AWG": 70, "20AWG": 110, "18AWG": 180, "16AWG": 280, "14AWG": 450, "12AWG": 720},
+                "standards": ["ANSI/BHMA A156.3 Grade 1"],
+                "opening_limits": {"nominal_device_length_in": 48, "field_sizable_min_door_width_in": 36, "standard_door_thickness_in": 1.75, "min_rim_stile_width_in": 4.25},
+                "fire_rating_note": "QED111 is the hex-dog function; the schedule does not identify the QED113 fire-rated function. Verify the exact door/device listing before use on a rated opening.",
+            },
+            "Dormakaba QED 100 Series Installation Instructions and Specifications",
+            "/evidence/dormakaba/QED100_MLR_Installation_Instructions.pdf",
+            "The Belleville schedule lists 626QED111-MLR at 1219 mm. Manufacturer data specifies the QED 100 MLR power, wire-run limits, sizing, and prep. The linked file is the exact MLR instruction sheet; do not infer a fire-rated configuration from QED111.",
+        ),
+        (
+            "hinge", "628661HD-CE-12EA", "Dormakaba 661HD concealed electric hinge, CE-12, 12-wire Easy Access",
+            {
+                "record_scope": "exact_configuration", "canonical_model": "661HD CE-12",
+                "hinge_type": "full_mortise_aluminum_geared_continuous", "power_transfer_type": "concealed_electric_hinge",
+                "conductor_count": 12, "conductor_gauge_awg": 22, "handing": "non_handed_standard_size",
+                "nominal_door_height_in": 84, "actual_hinge_length_in": 83,
+                "wire_transfer_note": "CE hinges conduct current through the hinge to electric locks, exit devices, or hold-open devices regardless of door position.",
+                "opening_limits": {"door_thickness_in": 1.75, "supports_180_degree_opening": True},
+            },
+            "Dormakaba 661HD CE-12 12-Wire Easy Access Hinge Template",
+            "/evidence/dormakaba/661HD_CE12_Hinge_Template.pdf",
+            "The schedule's 2108 mm dimension matches the manufacturer's standard 83 in hinge length. The schedule's RHR label is retained as source text; the standard 661HD CE-12 template describes the hinge as non-handed. Verify the exact catalog suffix, handing requirement if cut, conductor assignment and electrical load.",
+        ),
+    ]
+    for category, model, name, specs, source_title, source_url, notes in dormakaba_schedule_products:
+        db.execute(
+            "INSERT INTO products(category,manufacturer,model,name,specifications,source_title,source_url,evidence_status,notes) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(category,manufacturer,model) DO UPDATE SET name=excluded.name,specifications=excluded.specifications,source_title=excluded.source_title,source_url=excluded.source_url,evidence_status='manufacturer_document',notes=excluded.notes,updated_at=CURRENT_TIMESTAMP",
+            (category, "dormakaba", model, name, json.dumps(specs), source_title, source_url, "manufacturer_document", notes),
+        )
+
+    qed = db.execute("SELECT id FROM products WHERE category='exit_device' AND manufacturer='dormakaba' AND model='626QED111-MLR'").fetchone()
+    electric_hinge = db.execute("SELECT id FROM products WHERE category='hinge' AND manufacturer='dormakaba' AND model='628661HD-CE-12EA'").fetchone()
+    if qed and electric_hinge:
+        product_ids = json.dumps(sorted([qed["id"], electric_hinge["id"]]), separators=(",", ":"))
+        db.execute(
+            "INSERT OR IGNORE INTO compatibility_assertions(product_ids,outcome,conditions,rationale,source_title,source_url,evidence_status) VALUES (?,'compatible','{}',?,?,?,'manufacturer_document')",
+            (
+                product_ids,
+                "The QED 100 MLR instructions route the exit-device conductors through a power transfer device. Dormakaba identifies CE electric hinges as power-transfer components for exit devices, and the scheduled 661HD CE-12 provides 12 conductors. This supports the exact hinge-to-exit-device wiring interface only: use filtered, regulated 24VDC, keep the 22 AWG run within the QED limit (70 ft maximum), and verify the assigned conductors, load, door preparation, and applicable listing.",
+                "Dormakaba QED 100 MLR Instructions and 661HD CE-12 Hinge Template",
+                "/evidence/dormakaba/QED100_MLR_Installation_Instructions.pdf",
+            ),
         )
 
     # Keep corrected source-scoped seed facts in sync on repeat initialization.
@@ -285,9 +356,12 @@ def seed_manufacturer_product_data(db):
         if not left or not right:
             continue
         product_ids = json.dumps(sorted([left["id"], right["id"]]), separators=(",", ":"))
+        uses_wc16_manual = "CX-WC16-PS-M1" in {model_a, model_b} or "CX-WEC10-K2" in {model_a, model_b}
+        source_title = "Camden restroom kit manuals" if uses_wc16_manual else "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)"
+        source_url = "https://www.camdencontrols.com/pipelines/resource/1007_WC16_PS_M1_Restroom_Control_Manual.pdf" if uses_wc16_manual else "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=1"
         db.execute(
             "INSERT OR IGNORE INTO compatibility_assertions(product_ids,outcome,conditions,rationale,source_title,source_url,evidence_status) VALUES (?, 'compatible', '{}', ?, ?, ?, 'manufacturer_document')",
-            (product_ids, rationale, "Camden restroom kit manuals", "https://www.camdencontrols.com/pipelines/resource/1007_WC16_PS_M1_Restroom_Control_Manual.pdf" if "CX-WC16-PS-M1" in {model_a, model_b} or "CX-WEC10-K2" in {model_a, model_b} else "https://www.camdencontrols.com/pipelines/resource/11374_WC17SLVR_Restroom_Control_Manual_R2.pdf"),
+            (product_ids, rationale, source_title, source_url),
         )
 
     # Whole-kit and integrated-system assertions are stored as product tuples,
@@ -301,8 +375,21 @@ def seed_manufacturer_product_data(db):
                 ("activation_device", "CM-221"),
             ],
             "The CX-WC17SLVR manual documents this tuple as one kit: CX-33 logic relay, three CM-8536VR column switches, and built-in CM-221 hands-free switch. The model list stores CM-8536VR once; the documented quantity is three. Follow the selected mode and wiring diagram; this does not establish fit with an unlisted door, operator, or lock.",
-            "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions",
-            "https://www.camdencontrols.com/pipelines/resource/a131360_WC17SLVR_Restroom_Control_Manual_R2.pdf",
+            "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)",
+            "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=1",
+        ),
+        (
+            [
+                ("washroom_control", "CX-WC17SLVR"),
+                ("controller", "CX-33"),
+                ("activation_device", "CM-8536VR"),
+                ("activation_device", "CM-221"),
+                ("power_supply", "CX-PS13"),
+                ("power_supply", "CX-TRX-4024"),
+            ],
+            "The CX-WC17SLVR manual documents the four-device restroom-control kit and identifies the CX-PS13 and CX-TRX-4024 as the additional required power components. This six-model tuple covers the documented control-and-power package; follow its wiring and selected operating mode. It does not establish fit with an unlisted door, strike, or operator.",
+            "Camden CX-WC17SLVR Series Restroom Kit Installation Instructions (Rev. Nov 3, 2025)",
+            "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=8",
         ),
         (
             [
@@ -315,7 +402,7 @@ def seed_manufacturer_product_data(db):
             ],
             "The CX-WC16-PS-M1 manual documents the CX-33-controlled restroom kit with the listed outside wave-to-open, inside wave-to-open, wave-to-lock switches, and CX-ED1799L-8 strike as one configured system. Confirm the selected mode, fail mode, exact wiring, and opening fit.",
             "Camden CX-WC16-PS-M1 Series Restroom Kit Installation Instructions",
-            "https://www.camdencontrols.com/pipelines/resource/a2505_WC16_PS_M1_Restroom_Control_Manual.pdf",
+            "https://frca.camdencontrols.com/pipelines/resource/129319_WC16_PS_M1_Restroom_Control_Manual.pdf",
         ),
         (
             [
@@ -331,7 +418,7 @@ def seed_manufacturer_product_data(db):
             ],
             "Camden's CX-WC16-PS-M1 wiring diagram documents this integrated restroom-control and emergency-call configuration, including the listed relay/power module, switches, strike, CX-WEC10-K2, and both annunciators. Apply the diagram's mode, output, and wiring requirements; this tuple does not establish compatibility with additional unlisted hardware.",
             "Camden CX-WC16-PS-M1 Series Restroom Kit Installation Instructions — Emergency Call Integration",
-            "https://www.camdencontrols.com/pipelines/resource/a2505_WC16_PS_M1_Restroom_Control_Manual.pdf",
+            "https://www.camdencontrols.com/pipelines/resource/a8015_WC16_PS_M1_Restroom_Control_Manual.pdf",
         ),
     ]
     for models, rationale, source_title, source_url in camden_assembly_tuples:
@@ -350,6 +437,12 @@ def seed_manufacturer_product_data(db):
             "INSERT OR IGNORE INTO compatibility_assertions(product_ids,outcome,conditions,rationale,source_title,source_url,evidence_status) VALUES (?,'compatible','{}',?,?,?,'manufacturer_document')",
             (json.dumps(product_ids, separators=(",", ":")), rationale, source_title, source_url),
         )
+        if source_url != "/evidence/camden/WC17SLVR_Restroom_Control_Manual_R2.pdf#page=1" and "WC16-PS-M1" in source_title:
+            db.execute(
+                "UPDATE compatibility_assertions SET source_url=? WHERE product_ids=? AND conditions='{}' AND source_url=?",
+                (source_url, json.dumps(product_ids, separators=(",", ":")),
+                 "https://www.camdencontrols.com/pipelines/resource/a2505_WC16_PS_M1_Restroom_Control_Manual.pdf"),
+            )
 
     rule_seeds = [
         ("Norton 5800 documented activation interfaces", "automatic_operator", "activation_device", "5800_supported_activation_interfaces", "contains", "activation_interface", norton_source["source_title"], norton_source["source_url"], "The Norton 5800 manufacturer page lists the activation interface. This is interface-level evidence only; confirm exact options, receiver and wiring."),

@@ -3,5 +3,6 @@ dist/
 __pycache__/
 *.py[cod]
 doorhardware.db
+data/schedules/
 package.json
 package-lock.json
