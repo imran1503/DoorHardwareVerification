@@ -1478,7 +1478,7 @@ export default function ModelApp() {
               </div>
               <div className="home-columns">
                 <div className="home-projects">
-                  <div className="home-section-heading"><h2>Recent projects</h2><button className="text-link-button" onClick={() => setPage("projects")}>All projects <ArrowUpRight size={14} /></button></div>
+                  <div className="home-section-heading"><h2>Recent projects</h2></div>
                   <div className="home-project-list">
                     {projects.slice(0, 3).map((project) => (
                       <button className="home-project-row" key={project.id} onClick={() => openProject(project.id).catch((error) => setNotice(error.message))}>
