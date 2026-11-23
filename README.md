@@ -4,11 +4,30 @@ A React interface and local SQLite database for recording exact hardware models,
 
 ## Run locally
 
-Requirements: Python 3.10+ and Node.js 18+.
+Requirements: Python 3.10+ and Node.js 18+ (with npm). On Linux Mint/Ubuntu, install Python and virtual-environment support with `sudo apt update && sudo apt install python3 python3-venv`. Install Node.js and npm separately if they are not already available.
 
-1. Install frontend packages with `npm install`.
-2. In one terminal, run `python3 -m src.server` from this folder. This creates `doorhardware.db` in the project root and starts the API at `http://127.0.0.1:8000`.
-3. In a second terminal, run `npm run dev` and open the Vite URL (usually `http://localhost:5173`).
+Run these commands from the `DoorHardwareVerification` project folder. On Linux, use a virtual environment so project packages do not get installed into the system-managed Python:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+npm install
+```
+
+Keep the virtual environment activated in the backend terminal. Start the API there:
+
+```bash
+python -m src.server
+```
+
+This creates `doorhardware.db` in the project root and starts the API at `http://127.0.0.1:8000`. In a second terminal, change to the same project folder and start the frontend:
+
+```bash
+npm run dev
+```
+
+Open the Vite URL shown in the terminal (usually `http://localhost:5173`). Stop either service with `Ctrl+C`. To start again later, activate the environment in the backend terminal with `source .venv/bin/activate` before running `python -m src.server`.
 
 Restart the API after backend changes. SQLite is the source of truth; back up `doorhardware.db` to preserve catalog and evidence records.
 
