@@ -1316,10 +1316,8 @@ export default function ModelApp() {
     <div className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       <header className="topbar">
         <div className="app-brand">
-          <span className="app-brand-icon" aria-hidden="true" />
           <div className="app-brand-copy">
             <strong>Door Hardware Checker</strong>
-            <span>by Pro Security Controls Inc.</span>
           </div>
         </div>
         <div className="topbar-right">
@@ -1997,6 +1995,16 @@ export default function ModelApp() {
           </section>
         )}
       </main>
+
+      <footer className="app-footer">
+        <img
+          className="app-footer-icon"
+          src={activeTheme === "dark" ? "/brand/psc-logo-dark.png" : "/brand/psc-logo-square.png"}
+          alt=""
+          aria-hidden="true"
+        />
+        <span>by Pro Security Controls Inc.</span>
+      </footer>
 
       <input
         ref={evidenceImportInput}
